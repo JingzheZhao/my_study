@@ -4,7 +4,7 @@
 
 | 文件夹 | 内容 | 对应周 |
 |---|---|---|
-| 00-project | 项目问答、讲述稿、读 InstantSim 的笔记 | 第 0 到 2 周 |
+| 00-project | 博士面试准备：项目问答（InstantSim、Eddy3D）、岗位速查卡、讲解稿 | 第 1 到 5 周 |
 | 01-foundations | NumPy 写的线性回归、逻辑回归 | 第 3 到 10 周 |
 | 02-deep-learning | micrograd、makemore、U-Net、pix2pix | 第 11 到 18 周 |
 | 03-llm | GPT、BPE、LoRA、RAG | 第 19 到 25 周 |
