@@ -1,246 +1,232 @@
 # Project Q&A: InstantSim and Eddy3D
 
-How to use: don't memorize the wording. Read one question, close the file, and
-answer out loud in your own words, then open it and check what you missed. In
-Part 1 every question has a **short answer** (what you say first, 30 to 60
-seconds), the **code** it refers to, and a **follow-up chain**: the questions a
-PhD interviewer is likely to ask next, each with an answer. Practise the chains,
-not just the first answer; that is where interviews are decided.
+How to use: read a question, close the file, and answer out loud. Then open it
+and compare. The answers are written the way you would say them in an
+interview: first person, short sentences, conclusion first. Don't memorise the
+wording; use your own. The code is there so you know what each sentence refers
+to.
 
-Facts only you knew are confirmed in Part 0. Anything still unknown is marked
-as not recorded: say so in the room, never guess.
+In Part 1, every question has:
+- **Say:** what you say first, about 30 to 60 seconds
+- the code it refers to
+- **Follow-ups:** what the interviewer is likely to ask next, and how you'd answer
 
-InstantSim code is from the repository: `training/train_custom_solar.py`
+Code comes from the InstantSim repository: `training/train_custom_solar.py`
 (model, data, training), `backend/app/models/networks.py` (the model used for
 inference and evaluation), `training/evaluate_model.py` and
 `training/probe_symmetry.py` (evaluation), `backend/app/core/inference.py` and
-`backend/frontend/index.html` (deployment).
+`backend/frontend/index.html` (the running tool).
 
 ---
 
-## Part 0: Confirmed facts (updated 2026-10-20)
+## Part 0: Facts to know (checked 2026-10-21)
 
-Always use these numbers in interviews. README and docs match them.
+These are the numbers and facts to use. README and docs match them.
 
-1. **Accuracy** on 200 held-out test scenes (`training/evaluate_model.py`):
-   - Exact hour class **59.3%**, within ±1 hour **90.8%**, MAE **0.56 h**
-   - No-shadow baseline (every pixel gets full daylight hours): 39.8%, 53.6%, 2.18 h
-   - 49 training scenes: 70.3%, 95.4%, 0.38 h
-   - Near class boundaries (76% of site pixels): 49% exact, 88% within ±1 h.
-     Inside uniform regions: 91% exact, 99% within ±1 h
-   - High-rise scenes MAE 0.73 h, low-rise 0.40 h. Ground MAE 0.50 h, roofs 0.92 h
+**Results** (200 held-out test scenes, `training/evaluate_model.py`)
+- 90.8% of pixels within 1 hour of Ladybug. Mean error 0.56 hours.
+- 59.3% exactly right.
+- No-shadow baseline (ignore buildings, every pixel gets full sun): 53.6%
+  within 1 hour, mean error 2.18 hours.
+- On 49 training scenes: 95.4% within 1 hour, 70.3% exact, mean error 0.38 h.
+- Near shadow edges: 49% exact. Away from edges: 91% exact.
+- High-rise scenes: mean error 0.73 h. Low- and mid-rise: 0.40 h.
+  Roofs: 0.92 h. Ground: 0.50 h.
+- Don't use 80% any more. That was an early rough estimate (comparing images
+  with ChatGPT). Don't use 57.1% / 90.9% / 0.58 h either; those were before a
+  bug fix.
 
-   These replace 57.1% / 90.9% / 0.58 h from 2026-10-19 (see item 10). The 80%
-   in the application letters was an early rough estimate (images compared with
-   ChatGPT, not code). If asked: you later evaluated systematically on a
-   held-out test set, and these are the results.
-2. **FiLM is used in 13 blocks**: enc2–enc7 (6) and dec1–dec7 (7). enc1 and
-   enc8 have no normalization and no FiLM.
-3. **No data augmentation.**
-4. **Checkpoints** every 5 epochs, no validation set. The released model is the
-   epoch-195 checkpoint (0-indexed): the original script only saved when
-   `epoch % 5 == 0`. The script now also saves after the last epoch.
-5. **10 classes, 0 to 9 hours.** "Nine classes" in the letters is wrong.
-6. **Label = direct sun hours** between 9:00 and 17:00 (9 hourly sun
-   positions), the time people are mostly outdoors.
-7. **LSGAN loss, L1 weight 50.** No ablation was run for either.
-8. **InstanceNorm only**, no BatchNorm.
-9. **Data**: in Grasshopper a site is randomly subdivided and each plot randomly
-   extruded; height, density and footprint shape are sampled by category. Say
-   "parametric random generation", not "procedural".
-10. **Bugs found and fixed on 2026-10-20** (good story for "tell me about a bug"):
-    - The inference/evaluation copy of `SunConditionEncoder` forgot to zero the
-      embeddings of hours without sun; the training code did. Only short days
-      were affected: their exact accuracy went from 41–49% to 58–65% after the
-      fix, and overall from 57.1% to 59.3%.
-    - The browser put the sun vectors in fixed hour slots (slot 0 = 9:00, a zero
-      vector if the sun is down), but the training data packs the daylight
-      hours at the front. Fixed to match the training layout.
-11. **Symmetry probe** (`training/probe_symmetry.py`, 50 test scenes): same
-    scene with the 9 sun vectors in reverse order (label unchanged): exact
-    accuracy drops from 59.8% to 29.0%. Mirrored scenes with mirrored sun: 50.2%
-    (east-west) and 52.5% (north-south). Meaning: the model has partly learned
-    the geometry, but it depends on the order of the inputs even though the
-    physics does not. See questions 14 and 31.
-12. **How the height map is made** (Grasshopper script in `data-generator.gh`,
-    the one that sends to `/predict`): it is a 512×512 screenshot of the Rhino
-    Top view in Rendered display mode, not a raycast. Before the screenshot,
-    every mesh gets vertex colours:
-    - ground 240, a background plane 255 under everything
-    - buildings: gray = 195 − 195 × z / 250, with z the vertex height in metres
-      clipped to 0..250 m. So 0 m → 195, 125 m → 98, 250 m and above → 0
-    - the camera zooms to a square of 1.2 × the longer side of the bounding box
-      of ground + buildings, so the metres per pixel depend on the size of the
-      site
+**The test set**
+- The 200 test scenes have new building layouts, but reuse the site outlines
+  and sun conditions of training scenes (199 of 200). So the numbers show the
+  model handles buildings it hasn't seen, not new sites or dates.
+- Mix: 51 low-rise (tallest about 50 m), 49 mid-rise, 100 high-rise (up to
+  250 m).
 
-13. **Height colouring, confirmed 2026-10-21.** In Grasshopper: vertex z →
-    Remap Numbers from 0..250 m to 60..255 → Gradient (white at 0, black at 255)
-    → Mesh Colours. Ground is a flat colour of 240. So a building at 0 m gets
-    gray 255 − 60 = 195 and a building at 250 m gets 0, the same mapping as the
-    Python capture script. The gradient's parameter runs 0..255, but buildings
-    only use 60..255 of it, so their grays are 0..195. Why 60: it leaves a gap
-    between the lowest building (195) and the ground (240), so even a very low
-    building is never confused with ground. 250 m covers most sites.
-    **Measured in the training images:** the Rendered display mode applies a
-    gamma curve. The dark values in high-rise scenes are exactly
-    255 × (c / 255)^(1/2.2) for consecutive integer grays c = 0, 1, 2, 3, …
-    (observed 0, 20, 28, 34, 39, 43, 46, 50, 53, …; 89% of pixels below 120 fall
-    on this curve). So the stored pixel is a gamma-encoded, not linear,
-    function of height: tall buildings are spread over many levels, low
-    buildings are squeezed into few. In numbers: 0 m (gray 195) is stored as
-    about 226, 50 m (156) as about 204, 125 m (98) as about 165, 250 m and
-    above as 0. The ground stays at 240. Values between 226 and 240, and between
-    240 and 255, are anti-aliased edges (building-ground and ground-background).
-    So the low-rise test scenes top out at about 50 m, and high-rise scenes
-    contain towers at or above 250 m, which are clipped.
-    **Training vs. use:** training images were exported from the Rhino view;
-    at inference the Python script captures the view. The last inference input
-    saved by the backend (`debug_outputs/debug_ai_input.png`) shows the same
-    encoding as the training images: ground 240, buildings on the same gamma
-    curve (0, 20, 28, 34, …), lowest buildings around 226. So the two pipelines
-    agree; the model is not seeing a different encoding at inference.
+**Data**
+- 4,000 training scenes, 200 test scenes, made in Grasshopper.
+- Site: a 1000 m × 1000 m square, scaled around its centre by 0.6–1.25 in x and
+  0.6–1.3 in y. So sites are 600–1250 m by 600–1300 m.
+- Buildings: the site is randomly split into plots and each plot is extruded.
+  Height, density and footprint shape (polygon, rectangle, circle, L-shape…)
+  are sampled by category. Say "parametric random generation", not
+  "procedural".
+- Location: latitude random between 35°S and 65°N, longitude anywhere. Date
+  random over the whole year.
+- Label: Ladybug direct sun hours, 9:00 to 17:00 local solar time. Grid 5 m,
+  test points 0.2 m above the surface, one sun position per hour. 10 classes,
+  0 to 9 hours. ("Nine classes" in the letters is wrong.)
+- Ladybug takes roughly tens of seconds to a minute per scene.
 
-**Confirmation list (all answered 2026-10-21)**
-- a. Answered 2026-10-21 (see item 13).
-- b. Answered 2026-10-21: each training site starts as a 1000 m × 1000 m
-  square, scaled about its centre by 0.6–1.25 in x and 0.6–1.3 in y, so sites
-  are 600–1250 m by 600–1300 m. The camera frames 1.2 × the longer side, so
-  the captured square is 720–1560 m wide: 1.4–3.0 m per pixel in the 512 px
-  image and 2.8–6.1 m per pixel at the model's 256 px, a factor of about 2.2
-  between scenes. The model is never told which (see question 4).
-- c. Answered 2026-10-21: latitude uniformly random from 35°S to 65°N,
-  longitude −180° to 180°, date random over the whole year, hours fixed at
-  9:00–17:00. Checked in the training log: on full 9-hour days the sun is
-  highest at the 12:00 slot in 90% of scenes, so the window is in local solar
-  time (time zone ≈ longitude / 15, no daylight saving), the same convention
-  the browser uses.
-- d. Answered 2026-10-21: Ladybug grid size 5 m (the sites are large),
-  offset 0.2 m above the surface, time step 1 per hour.
-- e. Answered 2026-10-21: the original test set was generated separately from
-  the training set, with its own sites and sun conditions. Those files are no
-  longer on disk. The 200-scene `test/` folder that the reported numbers were
-  computed on is a different set: 199 of its 200 scenes have exactly the same
-  site outline and sun vectors as a training scene (training ids 1427–2399),
-  with different buildings. So the current numbers measure new building layouts
-  on sites and sun conditions seen in training; they are not the original
-  independent test. Its mix: 51 low-rise (about 50 m), 49 mid-rise, 100
-  high-rise. A 600-scene set in `E:\InstantSim\dataset\test_A` / `test_B`
-  (200 per height category) has no sun-vector log, so it can't be evaluated.
-- f. Answered: trained on your own PC, Intel Core i7 (9th gen), RTX 3060 Ti,
-  32 GB RAM. Training time not recorded; say so rather than guess.
-- g. Answered: Ladybug takes roughly tens of seconds to a minute per scene at a
-  5 m grid. "~100 ms" was an estimate from the result appearing instantly in
-  use; the measured forward pass is about 110 ms on a 2-core cloud CPU and
-  would be faster on the 3060 Ti. End-to-end time was never measured.
-- h. Not remembered. Don't describe earlier versions in an interview unless
-  you remember them.
+**Height map**
+- A 512×512 screenshot of the Rhino Top view, not a raycast. Training images
+  were exported from the view; the live tool captures it with a Python script.
+  Both give the same encoding.
+- Ground 240. Background 255. Buildings: height 0–250 m remapped to 60–255,
+  then a white-to-black gradient, so 0 m is gray 195 and 250 m is 0. Above
+  250 m is clipped.
+- Why 60: it leaves a gap between the lowest building (195) and the ground
+  (240), so a very low building is never confused with ground.
+- Rendered mode adds a gamma curve (about 1/2.2), so the saved pixel values are
+  not linear in height: 0 m shows as about 226, 50 m as 204, 125 m as 165,
+  250 m as 0.
+- The camera zooms to 1.2 × the longer side of the site. So one pixel is
+  1.4–3.0 m in the 512 px image and 2.8–6.1 m at the model's 256 px. The
+  model is never told which.
+
+**Model and training**
+- Conditional U-Net generator (pix2pix-based), 60.1 million parameters.
+- FiLM in 13 blocks: enc2–enc7 and dec1–dec7. enc1 and enc8 have no
+  normalisation and no FiLM.
+- InstanceNorm only, no BatchNorm.
+- Loss: least-squares GAN + 50 × L1. No ablation was run for either choice.
+- Adam, learning rate 1e-4, betas (0.5, 0.999), batch 16, 200 epochs.
+- No data augmentation. No validation set.
+- Checkpoints every 5 epochs; the released model is epoch 195 (counting from 0),
+  because the script only saved when `epoch % 5 == 0`. Now it also saves at the
+  end.
+- Trained on your own PC: Intel Core i7 (9th gen), RTX 3060 Ti, 32 GB RAM.
+  Training time and loss logs weren't kept. Say so; don't guess.
+- Speed: forward pass about 110 ms on a 2-core CPU. The "~100 ms" in the
+  README was an estimate. End-to-end time was never measured.
+
+**Bugs found and fixed (2026-10-20)**
+- The inference copy of the sun encoder didn't zero the hours without sun; the
+  training code did. Fixing it raised accuracy on short days from 41–49% to
+  58–65% exact.
+- The browser put the sun vectors in fixed clock slots; training packs the
+  daylight hours at the front. Fixed to match training.
+
+**Symmetry probe** (`training/probe_symmetry.py`, 50 test scenes)
+- Same scene, sun vectors in reverse order (the right answer doesn't change):
+  exact accuracy drops from 59.8% to 29.0%.
+- Mirrored scene with mirrored sun: 50.2% (east-west), 52.5% (north-south).
 
 **About AI-written code.** Interviewers assume every design choice is yours.
-When asked why something is done a certain way, answer with the reasoning in
-this file. If asked directly whether you used AI to write code, say yes, you
-used AI coding tools, and you understand and can explain every design decision.
-This document is how you get there.
+If asked directly whether you used AI to write code, say yes, you used AI
+coding tools, and you can explain every design decision. This file is how you
+get there.
 
 ---
 
 ## Part 1: InstantSim
 
-### A. Problem and motivation
+### A. The project and why
 
 **1. Describe the project in one or two sentences.**
 
-Short answer: computing sun exposure for an urban design takes a physics
-simulation that runs for minutes, so designers rarely check it while they
-iterate. I trained a conditional image-to-image network that takes a height map
-of the buildings and the sun directions for a day and returns a direct sun hours
-map in about 0.1 s, with 91% of pixels within one hour of the simulation.
+**Say:**
+In urban design, checking how much sun a place gets means running a
+simulation. That takes about a minute, so designers usually only check it at
+the very end. I wanted the answer to show up while they're still designing. So
+I trained a neural network to do it. You give it the building heights and the
+date and place, and it gives you the sun-hours map in about a tenth of a
+second. 90% of the pixels are within an hour of the real simulation.
 
-Follow-ups:
-- *What is "direct sun hours" exactly?* For every point on the ground or a roof,
-  the number of hours (here among 9:00, 10:00, …, 17:00) at which the sun is
-  above the horizon and the straight line from the point to the sun is not
-  blocked by a building. Ladybug computes it by casting one ray per point per
-  sun position and counting the rays that escape. Settings used: test points on
-  a 5 m grid, 0.2 m above the ground or roof, one sun position per hour.
-- *9:00 to 17:00 is 8 hours. How can a point get 9?* Ladybug samples the sun at
-  the 9 hour marks (9:00, 10:00, …, 17:00) and counts each unblocked sample as
-  one hour. So the label is a count of sampled instants, an approximation of
-  the continuous time in sun; a shadow edge that passes a point at 10:20 is
-  rounded to whole samples.
-- *Why 0.2 m above the surface, when Eddy3D uses 0.918 m?* Different questions.
-  Sun-hours guidelines judge sun on the ground and on open space, so the points
-  sit just above the surface; the small offset only keeps the ray from hitting
-  the surface it starts on. Eddy3D's sky exposure is about how a standing person
-  feels, so it starts at body mid-height.
-- *Why does a designer care?* Sun on public space, playgrounds and courtyards
-  drives outdoor comfort and is in many planning guidelines (for example
-  minimum sun hours on open space). It is checked at the end of design today
-  because the simulation is slow.
-- *Why 9:00 to 17:00 and not sunrise to sunset?* That is when people are mostly
-  outdoors, and it fixes the output range to 0..9, which keeps the label space
-  the same for every day of the year.
-- *Is this a research contribution or an application?* Honest answer: the
-  network is a known recipe (pix2pix-style conditional GAN). The contribution is
-  the formulation (sun directions as a condition so one model covers all
-  locations and dates), the data pipeline, and the end-to-end tool. The
-  evaluation in Part 0 also shows where the recipe falls short, which is what I
-  want to work on next.
+**Follow-ups:**
 
-**2. Why learn a surrogate at all? Why not make the ray tracing faster?**
+**"What exactly is direct sun hours?"**
+For each point on the ground or a roof, it's how many hours the sun can
+actually reach it. Ladybug checks the sun at 9, 10, 11 and so on up to 17. At
+each hour it draws a line from the point to the sun. If no building is in the
+way, that hour counts. So the answer is between 0 and 9.
 
-Short answer: a fair alternative. GPU ray tracing would also be fast and exact
-for this particular quantity. I chose learning because the same pipeline
-extends to quantities with no fast exact solver (wind, surface temperature,
-thermal comfort), where simulation takes hours. Sun hours was the right first
-target because the ground truth is cheap and exact, so I could study the
-surrogate itself.
+**"9 to 5 is only 8 hours. How can a point get 9?"**
+Because Ladybug counts the sun at 9 time points, 9:00 to 17:00, and each one
+counts as an hour. So really it's "how many of these 9 moments have sun". It's
+an approximation of the real time in sun.
 
-Follow-ups:
-- *So for sun hours specifically, is the network worth it?* For accuracy, no:
-  a GPU ray tracer is exact. Its value here is as a test bed with perfect labels
-  and as a fast, differentiable stand-in that can sit inside an optimisation
-  or generation loop.
-- *What does "differentiable" buy you?* Gradients of sun hours with respect to
-  the height map, so a generator or optimiser can be steered toward more sun on
-  open space without black-box search.
-- *What would change for wind?* The physics is non-local and depends on wind
-  direction and speed instead of sun vectors; the output becomes continuous
-  velocity fields; labels come from CFD (hours per case), so the dataset is much
-  smaller and generalisation becomes the main problem. The conditioning
-  mechanism (FiLM with the inflow direction) carries over.
+**"Why do designers care?"**
+Sun on parks, playgrounds and courtyards makes a big difference to how
+comfortable people are outside. Many cities also have rules about minimum sun
+on open space. Right now it gets checked late because the simulation is slow.
 
-**3. Where does the speed-up come from, and how did you measure it?**
+**"Why 9 to 5 and not sunrise to sunset?"**
+That's when people are mostly outside. It also keeps the answer between 0 and 9
+for every day of the year, so the output is the same kind of thing in summer
+and winter.
 
-Short answer: Ladybug casts rays for every grid point and every hour; the
-network does one forward pass of a fixed cost regardless of how many buildings
-there are. Ladybug takes roughly tens of seconds to a minute per scene (5 m
-grid, 9 sun positions); the network's forward pass takes about 110 ms on a
-2-core CPU, so a few hundred times faster. Honest detail: the "~100 ms" in the
-README was an estimate from the result appearing instantly; end-to-end time
-was never measured.
+**"Is this research, or an application?"**
+Honestly, the network itself is a known recipe, a pix2pix-style conditional
+GAN. What I did was frame the problem: I feed the sun directions in as a
+condition, so one model works for any place and date. I also built the data
+pipeline and the whole tool. And when I evaluated it properly, I found where
+the recipe breaks. That's what I'd want to work on next.
 
-Follow-ups:
-- *How many operations is the forward pass?* The generator has 60.1 million
-  parameters. Cost is fixed by the image size, not by scene complexity.
-- *What dominates end-to-end latency?* The viewport screenshot in Rhino, the
-  upload and the network forward pass; the post-processing (colour matching on
-  65k pixels) is small. Not measured; it would be the first thing to measure.
-- *How would you make it faster?* GPU inference, half precision, a smaller
-  network (the 1×1 bottleneck and 512-channel layers are oversized for this
-  task), or distillation into a smaller student.
+---
+
+**2. Why train a model at all? Why not just make the ray tracing faster?**
+
+**Say:**
+That's a fair point. For sun hours, a GPU ray tracer would also be fast, and
+it would be exact. I chose learning because the same approach carries over to
+things that don't have a fast exact solver, like wind or surface temperature,
+where a simulation can take hours. Sun hours was a good first target because
+the right answer is cheap to compute and exact. So I could study the model
+itself without worrying about bad labels.
+
+**Follow-ups:**
+
+**"So for sun hours alone, is the network worth it?"**
+For accuracy, no. A GPU ray tracer is exact. Its value is as a test case with
+perfect labels, and as a fast model you can take gradients through, so it can
+sit inside an optimisation or a generator.
+
+**"Why do gradients matter?"**
+If you can take the gradient of sun hours with respect to the height map, an
+optimiser can directly push the design toward more sun on open space. You
+don't need trial and error.
+
+**"What would change for wind?"**
+A lot. Wind depends on the wind direction and speed instead of the sun. The
+output is a velocity field, not a count. And the labels come from CFD, which
+takes hours per case, so you'd have far fewer examples. Then generalisation
+becomes the main problem. The conditioning part, FiLM with the wind direction,
+would carry over.
+
+---
+
+**3. Where does the speed-up come from? How did you measure it?**
+
+**Say:**
+Ladybug draws a ray from every grid point to the sun, for every hour. So the
+cost grows with the size of the site. The network just does one pass over the
+image, and that cost is the same no matter how many buildings there are.
+Ladybug takes somewhere between tens of seconds and a minute per scene. The
+network's forward pass takes about 110 milliseconds on a 2-core CPU. So it's
+a few hundred times faster. To be honest, I measured the forward pass, but not
+the full round trip from Rhino to the screen.
+
+**Follow-ups:**
+
+**"How big is the network?"**
+About 60 million parameters. The cost depends on the image size, not on how
+complicated the scene is.
+
+**"What takes the most time end to end?"**
+Probably the screenshot in Rhino, the upload, and the forward pass. The
+post-processing is small. I haven't measured it; that would be the first thing
+I'd measure.
+
+**"How would you make it faster?"**
+Run it on the GPU, use half precision, or make the network smaller. 512
+channels at the bottom is more than this task needs. Or train a smaller
+student model from this one.
+
+---
 
 ### B. Input 1: the height map
 
-**4. Why represent the scene as a height map?**
+**4. Why use a height map as the input?**
 
-Short answer: image-to-image networks need a regular grid. A top-down height map
-puts the whole scene into one channel at a fixed resolution, it is cheap to
-make (a screenshot of the Rhino Top view with heights painted as gray values),
-and it contains exactly what casts shadows on the ground: where the buildings
-are and how tall they are.
+**Say:**
+The network works on images, so I needed the scene as a grid. A height map
+from the top is the simplest way: each pixel stores how tall the building is
+there. And that's exactly what casts shadows on the ground: where the buildings
+are and how tall they are. I make it by painting the buildings in Rhino by
+height, gray for height, and taking a screenshot from the top view.
 
-How the height map is made (Grasshopper script, `create_colored_meshes` and
-`action_send`):
+How it's made (Grasshopper Python script):
 
 ```python
 BUILDING_H_MIN = 0.0
@@ -258,7 +244,7 @@ for v in joined_buildings.Vertices:          # colour every building vertex by i
     gray_val = int(COLOR_AT_BOTTOM + t * (COLOR_AT_TOP - COLOR_AT_BOTTOM))
     colors.append(System.Drawing.Color.FromArgb(gray_val, gray_val, gray_val))
 
-# a huge plane with colour 255, 50 m below the lowest geometry, is the background
+# a huge plane with colour 255, 50 m below everything, is the background
 
 # camera: Top view, Rendered mode, zoom to a square around the scene
 max_dim = max(dx, dy)                         # longer side of the bounding box
@@ -271,12 +257,16 @@ capture.Height = 512
 bitmap = capture.CaptureToBitmap(view)        # this PNG is sent to /predict
 ```
 
+In the Grasshopper file the training scenes were coloured the same way:
+vertex z → Remap 0..250 to 60..255 → Gradient white to black → Mesh Colours.
+60 on the gradient is gray 195, 255 is black.
+
 How the backend reads it (`inference.py`):
 
 ```python
 def _build_valid_mask_from_input(self, input_bgr):
-    # Background = 255 (outside the site) -> invalid
-    # Ground = 240, buildings < 240 (darker = taller) -> valid
+    # Background = 255 (outside the site) -> ignore
+    # Ground = 240, buildings < 240 (darker = taller) -> keep
     gray = cv2.cvtColor(input_bgr, cv2.COLOR_BGR2GRAY)
     valid = (gray != 255)
     kernel = np.ones((3, 3), np.uint8)
@@ -284,81 +274,93 @@ def _build_valid_mask_from_input(self, input_bgr):
     return valid
 ```
 
-Follow-ups:
-- *What can a height map not represent?* Anything with more than one height per
-  pixel: overhangs, arcades, bridges, tree canopies with space under them,
-  pilotis. It also can't say what a facade looks like; for ground-level sun
-  hours that rarely matters, for facade sun hours it does.
-- *Why a viewport screenshot?* It is the simplest way to get an image out of
-  Rhino: colour the meshes, look from the top, capture. Seen from the top, a
-  flat roof shows only its own vertices, so the pixel gets the roof height.
-- *What is wrong with a screenshot?* The Rendered mode applies lighting and
-  anti-aliasing, so the pixel values are not exactly the colours that were
-  assigned. Edges become blends of neighbouring values (the data contains values
-  like 241–251 between ground and background that no object was given), and
-  lighting can shift the grays. A sloped roof also interpolates colours between
-  its vertices. The image depends on display settings, not only on geometry.
-- *What would be better?* Cast one ray straight down per pixel (or read a depth
-  buffer) and write the hit height as a number, preferably in a 16-bit or float
-  image so heights are not rounded to 196 levels. Then the input depends only on
-  the geometry and is the same in training and use.
-- *How fine is the height resolution?* 250 m over 195 gray levels: about 1.3 m
-  per level. Enough for shadows of buildings; it can't distinguish a 1 m wall
-  from flat ground.
-- *Why three identical channels?* So the input matches the 3-channel pix2pix
-  layout. It wastes two channels. A better input would be one channel for height
-  plus one channel for the analysis mask (see the next question).
-- *Is "255 = outside the site" a good encoding?* It mixes two different things:
-  "not part of the analysis" and "empty space". Shadows from neighbouring
-  buildings outside the site can't be represented, but in a real city they
-  matter. Better: a geometry channel that includes the context buildings and a
-  separate binary mask for where to evaluate.
-- *How is height mapped to a gray value?* Linearly: 0 m is 195, 250 m is 0,
-  darker is taller; ground is 240 and the background 255. The gap between 195
-  and 240 separates the lowest building from the ground.
-- *Why use the vertex z and not the height above the ground?* Simpler, but it
-  assumes the ground is at z = 0. On a sloped site, or a model placed at an
-  elevation, every building would be read as taller or shorter than it is.
-- *Does the network know absolute heights?* Yes, as long as the mapping is the
-  same for every scene, which it is in this script (fixed 0–250 m, not
-  normalised per scene). That matters because shadow length depends on absolute
-  height (L = H / tan(altitude)). Training images and inference inputs use the
-  same mapping (checked, Part 0 item 13).
-- *What if a building is taller than 250 m?* It is clipped to 0, so the model
-  sees a 250 m building and under-predicts its shadow. High-rise test scenes
-  have 1,000–4,500 pixels at exactly 0 per scene, which may be clipped towers.
-- *Does the network know how many metres a pixel is?* No, and this is a real
-  flaw. The camera zooms to 1.2 × the longer side of the scene. Training sites
-  were 600–1300 m on their longer side, so at the model's 256 px one pixel is
-  anywhere from 2.8 m (600 m site) to 6.1 m (1300 m site), a factor of 2.2. Heights are in metres but distances are in pixels, so the same building
-  should cast a shadow twice as many pixels long on the small site. The model
-  can't know which case it is in. This is true in the training data too: the
-  training sites have different sizes, so the same building with the same sun
-  casts shadows of different pixel lengths in different training scenes. The
-  model can only learn an average scale, which puts a floor under the error,
-  most of all for long shadows (low sun, tall buildings), where a scale error
-  moves the shadow edge by many pixels. It is one plausible reason high-rise
-  scenes are the hardest (MAE 0.73 h vs 0.40 h), not yet tested.
-- *Why did you randomise the site size?* So the model wouldn't only know
-  1000 m × 1000 m sites and would generalise to other sizes. The intent was
-  right: varying the data is how you avoid overfitting to one setting. In
-  hindsight the capture undid it. Every site is zoomed to fill the image, so
-  the model never sees "a bigger site"; it sees the same-sized image at an
-  unknown scale. The variation I meant as diversity became ambiguity. Done
-  properly, the site size would vary at a fixed metres per pixel (a bigger site
-  covers more of the image, or is tiled), or the scale would be given to the
-  model as an input.
-- *How would you fix the scale problem?* Either a fixed metres-per-pixel (always
-  capture the same physical area, for example a 300 m square, and pad), or give
-  the scale to the model as an extra condition, or encode height in pixel units
-  (height divided by the pixel size), which makes the geometry scale-free:
-  then shadow length in pixels = height in pixels / tan(altitude) whatever the
-  site size.
+**Follow-ups:**
 
-**5. What if the user's image isn't 256×256?**
+**"How does height turn into gray?"**
+Linearly. Ground is 240, background is 255. Buildings go from 195 at 0 m down
+to 0 at 250 m, so darker means taller. I left a gap between 195 and 240 so the
+lowest building never looks like ground. Anything taller than 250 m gets
+clipped to 0. 250 m covers most sites.
 
-Short answer: the backend resizes every input to 256×256 with nearest-neighbour
-interpolation, exactly as in training, and upsamples the output to 512×512 for
+**"Why start buildings at 195 and not 239?"**
+To keep a clear gap from the ground. If a 2 m building were 238 and the ground
+240, the network could easily mix them up. With the gap, every building is
+clearly different from ground.
+
+**"What does the screenshot actually store?"**
+Not exactly the colours I set. Rendered mode adds a gamma curve, so the saved
+values aren't linear in height. A 0 m building comes out around 226, 50 m
+around 204, 125 m around 165, 250 m at 0. I checked this in the data: the
+darkest values are exactly what you get by putting 0, 1, 2, 3… through that
+curve. The network can still learn it, since it's monotonic, but tall
+buildings get many gray levels and low buildings get few.
+
+**"Is that a problem?"**
+It's not ideal. The image depends on display settings, not just geometry.
+Edges also get blended: there are values between ground and background that
+no object was given. I checked that training images and the live tool's
+images use the same encoding, so the model isn't confused at use time. But a
+cleaner way is to cast a ray down for each pixel and save the height as a
+number, in a 16-bit or float image.
+
+**"How precise is the height?"**
+250 m over 195 gray levels, so about 1.3 m per level. That's fine for building
+shadows, but it can't tell a 1 m wall from flat ground.
+
+**"What can't a height map show?"**
+Anything with more than one height in the same spot: overhangs, arcades,
+bridges, trees with space underneath. For sun on the ground that's usually
+fine. For sun on facades it isn't.
+
+**"Why three channels if it's grayscale?"**
+Just to match the 3-channel pix2pix setup. It wastes two channels. Better would
+be one channel for height and one for "where to analyse".
+
+**"Is 255 for outside the site a good idea?"**
+Not really. It mixes "don't analyse here" with "nothing is here". In a real
+city, buildings next to the site cast shadows into it, and this encoding can't
+show them. I'd use one channel for all the geometry, neighbours included, and
+a separate mask for where to evaluate.
+
+**"Why use the vertex z and not height above ground?"**
+It was simpler. But it assumes the ground is at z = 0. On a sloped site, or a
+model placed higher up, every building would be read wrong.
+
+**"Does the network know the real height of a building?"**
+Yes, because the mapping is fixed: 0 to 250 m, same for every scene. That
+matters, because shadow length depends on real height.
+
+**"Does the network know how many metres one pixel is?"**
+No. And this is a real flaw. The camera always zooms so the site fills the
+image. My training sites were 600 to 1300 m, so one pixel at 256 px is
+anywhere from 2.8 m to 6.1 m. Heights are in metres, but shadows are measured
+in pixels. So the same building with the same sun casts a shadow twice as
+many pixels long on a small site as on a big one, and the model can't tell
+which case it's in. It can only learn an average. That probably hurts most
+for long shadows, so it may be part of why high-rise scenes are harder. I
+haven't tested that yet.
+
+**"Why did you make the site size random?"**
+I didn't want the model to only know 1 km by 1 km sites. I wanted it to
+generalise. The idea was right: varying the data helps avoid overfitting. But
+the screenshot undid it. Every site gets zoomed to fill the image, so the
+model never sees "a bigger site". It just sees the same-sized image at an
+unknown scale. What I meant as variety turned into ambiguity.
+
+**"How would you fix it?"**
+Three options. Keep metres per pixel fixed, so a bigger site just covers more
+of the image or gets split into tiles. Or give the scale to the model as an
+extra input. Or store height in pixels instead of metres, height divided by
+pixel size. Then shadow length in pixels is just height in pixels divided by
+the tangent of the sun angle, whatever the site size.
+
+---
+
+**5. What if the image isn't 256 × 256?**
+
+**Say:**
+The backend resizes every input to 256 × 256 with nearest-neighbour, the same
+as in training. After the prediction it scales the result up to 512 for
 display.
 
 ```python
@@ -370,126 +372,145 @@ img_input_bgr_256 = cv2.resize(img_input_bgr, (256, 256),
 transforms.Resize((256, 256), interpolation=InterpolationMode.NEAREST)
 ```
 
-Follow-ups:
-- *Why nearest and not bilinear for the height map?* Bilinear would invent
-  heights that don't exist at building edges (a 30 m roof next to 0 m ground
-  becomes a 15 m pixel), which the network would read as a small building.
-- *What if the image isn't square?* It is stretched, which distorts building
-  footprints and shadow lengths. The Grasshopper side always makes a square
-  image, but the API doesn't check. Better: pad to a square, or crop and tile.
-- *Can the network run at 512 or 1024 directly?* It is fully convolutional, so
-  technically yes for multiples of 256, but with 8 down-sampling steps the
-  bottleneck becomes 2×2 or 4×4 and the network never saw those statistics in
-  training, and shadow lengths in pixels change. So in practice no without
-  retraining.
-- *What about a larger site?* Either a coarser pixel (less detail) or tiling.
-  Tiling needs overlap, because a shadow can cross a tile border: a tile needs
-  context of at least the longest shadow, H / tan(altitude), from its
-  neighbours.
-- *Why 256 at all?* It is the standard pix2pix size and fits batch 16 in GPU
-  memory. The cost is resolution: training sites are 600–1300 m, so at 256 px a
-  pixel is 2.8–6.1 m. A 20 m wide building is only 3–7 pixels across, and a
-  15 m street 2–5 pixels, so courtyards and narrow streets, exactly where sun
-  matters for people, are a few pixels wide. This is why one-pixel errors at
-  shadow edges cost so much in exact accuracy.
-- *Then is the model suited to a single building or a small plaza?* Not as
-  trained. It learned neighbourhood-scale sites of roughly 1 km; a 100 m site
-  would be stretched to fill the image at 0.5 m per pixel, a scale it never
-  saw.
-- *Does the 512 px capture always show exactly the square you zoomed to?*
-  `ZoomBoundingBox` fits the square into the viewport on screen; if the
-  viewport isn't square, the 512×512 capture can show a slightly different area
-  than intended, which changes the scale again. Worth checking.
+**Follow-ups:**
 
-**6. Is the site orientation important?**
+**"Why nearest and not bilinear?"**
+Bilinear blends neighbouring pixels. At the edge of a 30 m roof next to the
+ground, you'd get a pixel that looks like a 15 m building. Nearest keeps every
+pixel a real height.
 
-Short answer: yes. The sun vectors are in world coordinates, so the image must
-be north-up and aligned with the world x and y axes, as in training. Rotating
-the site in the image without rotating the sun vectors gives wrong shadows.
+**"What if the image isn't square?"**
+It gets stretched, which distorts footprints and shadows. The Grasshopper side
+always makes a square image, but the backend doesn't check. It should pad to a
+square instead.
 
-Follow-ups:
-- *How did you check which image axis is which world axis?* With the symmetry
-  probe: flipping the image top-bottom and negating the y component of every
-  sun vector keeps accuracy close to the original (52.5% vs 59.8% exact),
-  consistent with image rows running along world y.
-- *Could you make the model rotation-invariant?* The physics is equivariant:
-  rotate the scene and the sun together and the label rotates. That can be
-  built in by data augmentation (rotate image and vectors together) or by
-  rotating everything into a canonical frame (for example sun azimuth at noon
-  pointing up) before the network and rotating the output back.
+**"Could you just run it at 512 or 1024?"**
+Technically yes, it's fully convolutional. But the network never saw those
+sizes in training, and shadow lengths in pixels change. So not without
+retraining.
 
-### C. Input 2: the sun conditions
+**"What about a bigger site?"**
+Either each pixel covers more ground, so less detail, or you split it into
+tiles. Tiles need to overlap, because a shadow can cross the border. The
+overlap has to be at least as long as the longest shadow.
+
+**"Why 256?"**
+It's the standard pix2pix size and fits batch 16 in memory. The cost is
+detail. At 2.8 to 6.1 m per pixel, a 20 m building is only 3 to 7 pixels wide,
+and a 15 m street is 2 to 5. Courtyards and narrow streets, where sun matters
+most for people, are just a few pixels. That's a big reason one-pixel errors at
+shadow edges cost so much.
+
+**"Can I use it for a small plaza?"**
+Not as it is. It learned neighbourhood-size sites around 1 km. A 100 m site
+would be zoomed to fill the image at 0.5 m per pixel, a scale it never saw.
+
+---
+
+**6. Does the site orientation matter?**
+
+**Say:**
+Yes. The sun directions are in world coordinates, so the image has to be
+north-up, like in training. If you rotate the site in the image but not the
+sun, the shadows come out wrong.
+
+**Follow-ups:**
+
+**"How did you check which way the image axes go?"**
+With the symmetry test. If I flip the image top to bottom and flip the north
+part of every sun vector, accuracy stays close to the original. That fits
+image rows running along world y.
+
+**"Could the model handle any rotation?"**
+The physics allows it: rotate the scene and the sun together, and the answer
+rotates the same way. You could teach that with augmentation, rotating both
+together. Or you rotate everything so the sun always comes from the same side,
+run the model, and rotate the result back.
+
+---
+
+### C. Input 2: the sun
 
 **7. Why are the sun conditions 36 numbers?**
 
-Short answer: 9 sun positions (one per hour from 9:00 to 17:00) × 3 components
-of the sun direction = 27, plus 9 flags that say whether each slot holds a real
-sun position (1) or is empty because the sun is down (0).
+**Say:**
+There are 9 hours, 9 to 17. For each hour I give the sun direction as 3
+numbers, x, y and z. That's 27. Then 9 more numbers, one per slot, saying
+whether there's actually a sun position there. In winter at high latitudes the
+sun can set before 5, so some slots are empty.
 
 ```python
-# SolarDataset: the data log stores only the hours with sun, in time order
+# SolarDataset: the log only has the hours with sun, in time order
 vecs = entry.get('vectors', [])                 # list of [x, y, z], up to 9
 
-raw_vecs = np.zeros((9, 3), dtype=np.float32)   # unused slots stay zero
+raw_vecs = np.zeros((9, 3), dtype=np.float32)   # empty slots stay zero
 mask = np.zeros((9,), dtype=np.float32)
 
 num_to_fill = min(len(vecs), 9)
 if num_to_fill > 0:
     raw_vecs[:num_to_fill] = np.array(vecs[:num_to_fill], dtype=np.float32)
-    mask[:num_to_fill] = 1.0                    # packed at the front
+    mask[:num_to_fill] = 1.0                    # sunny hours packed at the front
 
 vec36 = np.concatenate([raw_vecs.flatten(), mask], axis=0)   # 27 + 9 = 36
 ```
 
-A real entry from the test log (8 daylight hours; 17:00 is missing):
+A real entry (8 hours of sun; 17:00 is missing):
 
 ```
 {"id": "0000", "vectors": [[-0.548, 0.7248, -0.4175], [-0.3194, 0.8071, -0.4965],
  ..., [0.9249, 0.3723, -0.0771]]}
 ```
 
-Follow-ups:
-- *What does one vector mean?* A unit vector pointing from the sun toward the
-  ground (Ladybug convention), so z is negative. Altitude = asin(−z): the first
-  vector above has z = −0.4175, an altitude of about 25°.
-- *Why sun vectors and not latitude, longitude, date and time?* Shadows depend
-  only on where the sun is, not on why it is there. Vectors are the physical
-  cause; latitude and date are an indirect description the network would have
-  to convert with astronomy it has no reason to learn well. Different places
-  and dates with the same sun path give the same label, and vectors make that
-  explicit.
-- *Why the mask, if empty slots are already zero vectors?* A zero vector is not
-  a valid direction, but the network can't know that unless told; after the
-  first linear layer a zero input becomes the bias, which is not zero. The mask
-  removes that ambiguity and lets the model zero those slots (question 9).
-- *Why is slot 0 not always 9:00?* Because the log keeps only daylight hours and
-  packs them at the front. On a short day slot 0 may be 10:00. So slot index is
-  "the k-th daylight hour", not a clock time. That is a weakness: the meaning of
-  a slot changes with the day length. The network can still tell from the
-  vector itself (morning sun points west) but it has to learn that.
-- *Where do the vectors come from at inference time?* The browser computes the
-  sun position with SunCalc for the chosen place and date at each hour from 9 to
-  17 and converts it to the Ladybug convention. Training used Ladybug's sun
-  path. The two algorithms differ by small fractions of a degree, which is far
-  below what the model resolves.
-- *What time zone does "9:00" use?* In the browser, `round(lon / 15)` hours from
-  UTC, i.e. solar-ish time without daylight saving. A city whose legal time zone
-  differs from its longitude (Spain, western China) gets a window shifted by up
-  to an hour or more. The training data uses the same convention: on full days
-  the sun is highest at the 12:00 slot in 90% of scenes, i.e. local solar time.
-  So training and use agree, but "9:00–17:00" means solar time, not the
-  clock time a user in Madrid or Toronto in summer would expect.
-- *Why are 44% of training days shorter than 9 hours?* The window is 3 hours
-  before solar noon and 5 after, so in winter at mid and high latitudes the
-  sun sets before 17:00. That is why the evening end is missing far more often
-  than the morning end (1,386 vs 392 short training days).
-- *Why 35°S to 65°N?* It covers most cities by latitude. Note that it is
-  asymmetric: nothing south of 35°S (Melbourne, Auckland, Wellington are
-  outside), and sampling is uniform in latitude, not weighted by where people
-  live.
+**Follow-ups:**
+
+**"What does one vector mean?"**
+It's a unit vector pointing from the sun down to the ground. That's Ladybug's
+convention, so z is negative. The first one here has z = −0.42, which means
+the sun is about 25 degrees above the horizon.
+
+**"Why give sun directions and not latitude and date?"**
+Because shadows only depend on where the sun is, not why it's there. Two
+different cities on different dates with the same sun path give the same
+answer. Giving the vectors makes that obvious. With latitude and date, the
+network would have to learn astronomy first.
+
+**"Why the extra 9 flags, if empty slots are already zero?"**
+A zero vector isn't a real direction, but the network doesn't know that. After
+the first layer, a zero input becomes the bias, which isn't zero. The flags
+tell the model which slots are real, and the encoder uses them to zero the
+empty ones.
+
+**"Is slot 0 always 9 o'clock?"**
+No. The log only keeps hours with sun and packs them at the front. On a short
+day slot 0 might be 10:00. So a slot means "the k-th sunny hour", not a clock
+time. That's a weakness. The model can still tell morning from evening by the
+direction, but it has to learn that.
+
+**"Where do the vectors come from in the live tool?"**
+The browser calculates the sun position with a library called SunCalc for the
+chosen place and date, then converts it to Ladybug's convention. Training used
+Ladybug's own sun path. They differ by tiny fractions of a degree, far below
+what matters here.
+
+**"Which time zone is 9 o'clock?"**
+Local solar time. The browser uses longitude divided by 15 as the time zone,
+no daylight saving. I checked the training data: on full days the sun is
+highest in the 12:00 slot 90% of the time, so training used the same
+convention. They match. But a user in Madrid, or in Toronto in summer, would
+think of clock time, which can be an hour or two off.
+
+**"Why are 44% of training days shorter than 9 hours?"**
+Because the window is 3 hours before noon and 5 hours after. In winter at mid
+and high latitudes, the sun sets before 5. That's why it's almost always the
+evening that's missing, not the morning: 1,386 against 392 training scenes.
+
+**"Why latitudes 35°S to 65°N?"**
+It covers most cities. But it's lopsided. Nothing south of 35°S, so Melbourne,
+Auckland and Wellington are outside. And it's uniform in latitude, not weighted
+by where people live.
 
 ```javascript
-// index.html: data time offset used for the 9 vectors sent to the backend
+// index.html: the 9 vectors sent to the backend
 const dataTimeZoneOffset = Math.round(lon / 15);
 for (let h = 0; h <= 24; h++) {
   if (h >= 9 && h <= 17) {
@@ -500,22 +521,26 @@ for (let h = 0; h <= 24; h++) {
     }
   }
 }
-// Same layout as the training data: daylight hours packed at the front,
-// unused slots zero-padded at the end
+// Same layout as training: sunny hours packed at the front,
+// empty slots filled with zeros at the end
 while (sunVectors.length < 27) sunVectors.push(0.0, 0.0, 0.0);
 ```
 
-- *Why hourly sun positions and not finer?* Ladybug's direct sun hours with a
-  time step of 1 counts the hour marks, so the label itself is hourly. Finer
-  time steps would give fractional hours and a smoother label; the
-  conditioning would need more slots or a set encoder (question 14).
+**"Why one sun position per hour, not more?"**
+Because the label is hourly. Ladybug with a time step of 1 checks once per
+hour. Finer steps would give a smoother answer, but then I'd need more slots,
+or an encoder that doesn't care how many vectors there are (question 14).
 
-**8. How does a 36-number vector get into a convolutional network?**
+---
 
-Short answer: a small encoder turns it into a 128-number embedding. Each of the
-9 vectors goes through the same small MLP, empty hours are zeroed, the 9
-results are concatenated in order with the mask and the day length, and a
-linear layer fuses them. Every FiLM layer then reads this embedding.
+**8. How do 36 numbers get into an image network?**
+
+**Say:**
+A small encoder turns them into 128 numbers. Each sun direction goes through
+the same small network. Hours without sun get zeroed. Then I put the 9
+results side by side, in order, add the flags and the fraction of sunny hours,
+and one layer squeezes it all into 128 numbers. Every FiLM layer in the main
+network reads those 128 numbers.
 
 ```python
 class SunConditionEncoder(nn.Module):
@@ -525,7 +550,7 @@ class SunConditionEncoder(nn.Module):
             nn.Linear(3, emb_dim), nn.LeakyReLU(0.2, True),
             nn.Linear(emb_dim, emb_dim), nn.LeakyReLU(0.2, True),
         )
-        fuse_in = 9 * emb_dim + 9 + 1               # 1152 + 9 mask + 1 day length
+        fuse_in = 9 * emb_dim + 9 + 1               # 1152 + 9 flags + 1 day length
         self.fuse = nn.Sequential(nn.Linear(fuse_in, emb_dim), nn.LeakyReLU(0.2, True))
 
     def forward(self, vec):                          # vec: (B, 36)
@@ -538,102 +563,120 @@ class SunConditionEncoder(nn.Module):
         return self.fuse(torch.cat([feat_flat, mask_flat, daylen], dim=1))
 ```
 
-Follow-ups:
-- *Why share one MLP across the 9 hours?* Lifting a direction into features is
-  the same job for every hour, so sharing means 9× fewer parameters and every
-  training example teaches it 9 times. Position information comes from where
-  the result sits in the concatenation.
-- *Why the day-length feature, when the mask already contains it?* It is
-  redundant (the mask sum divided by 9); it gives the fuse layer the number
-  directly instead of making it count. A small convenience, not essential.
-- *Why 128 dimensions?* A conventional size; 36 inputs don't need more. Not
-  tuned. The FiLM layers map 128 to up to 1,024 numbers (γ and β for 512
-  channels).
-- *Is one global embedding enough?* For sun direction, yes: the condition is the
-  same for every pixel. A spatially varying condition (for example different
-  materials per pixel) would need a spatial method such as SPADE.
+**Follow-ups:**
 
-**9. What was the masking bug?**
+**"Why use the same small network for all 9 hours?"**
+Turning a direction into features is the same job every hour. Sharing it means
+9 times fewer weights, and every training example teaches it 9 times. Which
+hour it is comes from the position in the line-up.
 
-Short answer: training multiplied the per-hour features by the mask; the copy of
-the encoder used for inference and evaluation didn't. On days with fewer than 9
-daylight hours the empty slots then fed the MLP's bias output, which the model
-had never seen in training. Fixing it raised exact accuracy on short days from
-41–49% to 58–65%, and overall from 57.1% to 59.3%.
+**"Why the day-length number, when the flags already say it?"**
+It's redundant, just a shortcut. It's the number of flags divided by 9, so the
+layer doesn't have to count. Not essential.
+
+**"Why 128?"**
+A common size. 36 inputs don't need more. I didn't tune it.
+
+**"Is one set of 128 numbers enough for the whole image?"**
+For the sun, yes, because the sun is the same for every pixel. If the
+condition changed across the image, like different materials in different
+places, you'd need a spatial method, like SPADE.
+
+---
+
+**9. Tell me about a bug you found.**
+
+**Say:**
+When I evaluated the model properly, short winter days were clearly worse than
+full days. That pointed to the code that only matters on short days. I
+compared the training code and the inference code line by line and found the
+inference version was missing one line. In training, the hours without sun
+were zeroed. In inference they weren't, so empty hours fed in values the model
+had never seen. After the fix, accuracy on short days went from about 45% to
+about 60% exact.
 
 ```python
 # backend/app/models/networks.py, after the fix
 feat = self.per_vec(v)
-# Zero the embeddings of hours without sun, as in training
+# Zero the hours without sun, as in training
 # (per_vec(0) is not zero because of the biases)
 feat = feat * m01.unsqueeze(-1)
 ```
 
-Follow-ups:
-- *How did you find it?* The evaluation broken down by day length showed short
-  days much worse than full days, which pointed at the code paths that only
-  matter for short days; comparing the training and inference encoders line by
-  line found the missing line.
-- *Why didn't it break full days?* With 9 daylight hours the mask is all ones,
-  so the multiplication changes nothing.
-- *How do you prevent this kind of bug?* One model definition imported by both
-  training and inference (the training script has its own copy), and a test
-  that runs both on the same input and checks the outputs are identical.
-- *Was there a second mismatch?* Yes, the browser placed hours in fixed clock
-  slots while training packs them at the front. Also fixed; it only affected
-  days where the sun is down at 9:00.
+**Follow-ups:**
+
+**"Why didn't it break full days?"**
+On a full day all 9 flags are 1, so multiplying by them changes nothing.
+
+**"How would you stop this happening again?"**
+Have one model definition that both training and inference import, instead of
+two copies. And a test that runs both on the same input and checks they give
+the same output.
+
+**"Was there anything else like that?"**
+Yes. The browser put the sun in fixed clock slots, 9:00 always in slot 0, with
+a zero if the sun was down. Training packs the sunny hours at the front. I
+fixed the browser to match. It only mattered on days when the sun is down at 9.
+
+---
 
 ### D. Output
 
-**10. What does the network output, and why a colour image?**
+**10. What does the model output? Why a colour image?**
 
-Short answer: a 3×256×256 RGB image in Ladybug's legend colours, 10 colours for
-0 to 9 hours. Honestly, because the Ladybug output image was the easiest label
-to produce and it fits pix2pix directly. The colours are converted back to
-hours afterwards by nearest legend colour in Lab space.
+**Say:**
+It outputs a colour image, 256 × 256, in Ladybug's legend colours. 10 colours
+for 0 to 9 hours. Honestly, I did it that way because Ladybug's coloured image
+was the easiest label to get, and it fits pix2pix directly. Afterwards I turn
+the colours back into hours by matching each pixel to the nearest legend
+colour.
 
 ```python
 self.last = nn.Sequential(
     nn.ReLU(True),
     nn.ConvTranspose2d(128, output_nc, 4, 2, 1),   # 128 -> 256 pixels, 3 channels
-    nn.Tanh()                                      # [-1, 1], same scale as the label
+    nn.Tanh()                                      # [-1, 1], same range as the label
 )
 ```
 
-Follow-ups:
-- *What is wrong with predicting colours?* The loss works in RGB, not in hours.
-  The legend runs blue, purple, red, orange, yellow, so the RGB distance between
-  two classes isn't proportional to their difference in hours, and the network
-  wastes capacity on 3 channels for a 1-D quantity. Errors land between legend
-  colours and have to be snapped back.
-- *What would you predict instead?* Three options:
-  1. Regression: one channel with hours, L1 loss in hours. Simple and direct.
-  2. Classification: 10 channels, cross-entropy per pixel. Gives a probability
-     per class, so a built-in uncertainty, but ignores that 3 is closer to 4
-     than to 9.
-  3. Ordinal regression: predict P(hours > k) for k = 0..8, which respects the
-     order. The best fit for a count.
-- *Better still?* Use the physics: direct sun hours is a sum over hours of
-  "is this pixel lit at hour i". Predict 9 shadow masks, one per sun vector,
-  and sum them. Each mask is a simpler problem (a shadow for one sun
-  direction), the sum is automatically between 0 and the number of daylight
-  hours, the order of the hours no longer matters, and a single shadow mask can
-  be supervised and checked on its own.
-- *Why Tanh?* The labels are normalised to [−1, 1] (`Normalize(0.5, 0.5)`),
-  and Tanh outputs exactly that range.
-- *Can the model predict more hours than the sun is up?* In principle yes. In
-  practice only 0.7% of pixels on short-day scenes exceed the possible maximum,
-  so it has learned the cap. A physics-based output (summing per-hour masks)
-  would guarantee it.
+**Follow-ups:**
 
-**11. Why are labels resized with bilinear interpolation but height maps with
-nearest?**
+**"What's wrong with predicting colours?"**
+The loss is computed on colours, not hours. The legend goes blue, purple, red,
+orange, yellow, so the distance between two colours doesn't match the
+difference in hours. And it uses 3 channels for what is really one number.
+Errors land between colours and have to be snapped back.
 
-Short answer: that is in the training code: the height map uses nearest to keep
-hard edges, the label uses bilinear. In hindsight bilinear on the label is
-questionable: averaging two legend colours produces a colour that is not in the
-legend, so the network is trained to output in-between colours at class
-boundaries.
+**"What would you predict instead?"**
+Three options. One number per pixel, the hours, with an L1 loss in hours.
+Simple. Or 10 classes per pixel with cross-entropy, which gives a probability
+for each, so a built-in confidence, but it doesn't know 3 is closer to 4 than
+to 9. Or ordinal: predict "more than 0 hours", "more than 1 hour", and so on.
+That respects the order and suits a count best.
+
+**"Anything better than that?"**
+Use the physics. Sun hours is just "lit at 9" plus "lit at 10" and so on. So
+predict 9 shadow masks, one per hour, and add them up. Each mask is an easier
+problem, one sun direction. The total can't go above the number of sunny
+hours. The order of the hours stops mattering. And you can check each hour's
+shadow on its own.
+
+**"Why Tanh at the end?"**
+The labels are scaled to −1 to 1, and Tanh outputs exactly that range.
+
+**"Can it predict more hours than the sun is up?"**
+In principle, yes. In practice, only 0.7% of pixels on short days go over. So
+it has mostly learned the limit. The shadow-mask version would guarantee it.
+
+---
+
+**11. Why are labels resized with bilinear but height maps with nearest?**
+
+**Say:**
+That's in the training code: nearest for the height map to keep sharp edges,
+bilinear for the label. Looking back, bilinear on the label was a mistake.
+Averaging two legend colours gives a colour that isn't in the legend, so I was
+training the network to output in-between colours at the edges.
 
 ```python
 self.transform_A = transforms.Compose([...,
@@ -642,31 +685,36 @@ self.transform_B = transforms.Compose([...,
     transforms.Resize((256, 256), interpolation=InterpolationMode.BILINEAR), ...])
 ```
 
-Follow-ups:
-- *Does it matter much?* Probably a little, at boundaries, which is where most
-  errors are. Also the original 512 px Ladybug images already contain blended
-  colours: only about 82% of site pixels are exact legend colours. The
-  evaluation resizes labels with nearest and snaps every pixel to the nearest
-  legend colour, so the metrics are in clean classes.
-- *What would you do?* Convert labels to hour indices first, then resize with
-  nearest (or average in hours, if predicting hours by regression).
+**Follow-ups:**
 
-### E. Architecture
+**"Does it matter much?"**
+Probably a little, at the edges, which is where most errors are. The original
+Ladybug images already have blended colours too: only about 82% of pixels are
+exact legend colours. In evaluation I resize labels with nearest and snap every
+pixel to a legend colour, so the numbers are in clean classes.
+
+**"What would you do?"**
+Turn the label into hour numbers first, then resize with nearest.
+
+---
+
+### E. Network
 
 **12. Why a U-Net? Walk me through it.**
 
-Short answer: the output is a map of the same size as the input and aligned
-with it pixel by pixel. A U-Net compresses the image in 8 steps (256 → 1) to
-get global context, expands it back in 8 steps, and skip connections pass every
-encoder feature map to the decoder at the same size, so building edges stay
+**Say:**
+The output is a map the same size as the input, lined up pixel by pixel. A
+U-Net shrinks the image in 8 steps, from 256 down to 1 pixel, so it can see
+the whole scene. Then it grows it back in 8 steps. At each size there's a skip
+connection that passes the details straight across, so the building edges stay
 sharp.
 
 ```python
 def forward(self, x, vec):
-    emb = self.cond_enc(vec)                 # sun conditions -> 128 numbers
+    emb = self.cond_enc(vec)                 # sun -> 128 numbers
 
     e1 = self.enc1(x)                        # 256 -> 128, no norm, no FiLM
-    e2 = self.enc2(e1, emb)                  # each DownBlock: LeakyReLU, conv k4 s2, FiLM
+    e2 = self.enc2(e1, emb)                  # each step: LeakyReLU, conv (halves size), FiLM
     e3 = self.enc3(e2, emb)                  # 64
     e4 = self.enc4(e3, emb)                  # 32
     e5 = self.enc5(e4, emb)                  # 16
@@ -674,7 +722,7 @@ def forward(self, x, vec):
     e7 = self.enc7(e6, emb)                  # 4 ... 2
     e8 = self.enc8(self.enc8_act(e7))        # 1×1, no norm, no FiLM
 
-    b, c, h, w = e8.size()                   # sun embedding as 512 extra channels
+    b, c, h, w = e8.size()                   # the sun also enters here as 512 extra channels
     v = self.bottleneck_fc(emb).view(b, 512, 1, 1).expand(b, 512, h, w)
 
     d1 = self.dec1(torch.cat([e8, v], 1), emb)
@@ -685,51 +733,60 @@ def forward(self, x, vec):
     d5 = self.dec5(d4, emb); d5 = torch.cat([d5, e3], 1)
     d6 = self.dec6(d5, emb); d6 = torch.cat([d6, e2], 1)
     d7 = self.dec7(d6, emb); d7 = torch.cat([d7, e1], 1)
-    return self.last(d7)                     # ConvTranspose + Tanh -> 3×256×256
+    return self.last(d7)                     # -> 3 × 256 × 256
 ```
 
-Follow-ups:
-- *Why does a shadow problem need global context?* Shadow length is
-  H / tan(altitude): at 10° altitude a building casts a shadow 5.7 times its
-  height, at 30° 1.7 times. The training data includes sun altitudes down to
-  0–2°, so a shadow can cross most of the image. A pixel's value can depend on a
-  building far away. The 1×1 bottleneck sees the whole image, and the
-  receptive field of the deeper layers covers it too.
-- *Then what do the skip connections add?* Exact positions. The bottleneck knows
-  "there is a tall building to the south-west"; the 128×128 skip from enc1 knows
-  exactly which pixels are its edge. The decoder combines both.
-- *Why 4×4 convolutions with stride 2 instead of 3×3 plus pooling?* The pix2pix
-  design: down-sampling is learned instead of fixed max pooling, and a kernel
-  of 4 with stride 2 covers each input pixel evenly. A known side effect of the
-  matching transposed convolution is checkerboard artefacts.
-- *Why LeakyReLU in the encoder and ReLU in the decoder?* Also from pix2pix and
-  DCGAN: leaky units keep a gradient for negative inputs in the encoder; the
-  choice in the decoder matters little.
-- *Why does enc8 have no normalisation?* It is 1×1: instance normalisation over a
-  single pixel subtracts the value from itself and outputs zeros, which would
-  erase the bottleneck. enc1 has none either, following pix2pix, which keeps the
-  raw input level in the first skip connection.
-- *What does dropout do here?* Dropout 0.5 in dec1–dec3 during training, as in
-  pix2pix. At inference `model.eval()` turns it off, so the output is
-  deterministic. pix2pix kept dropout on at test time as a noise source; turning
-  it on and running the model 20 times would give a cheap uncertainty estimate
-  (Monte Carlo dropout). Not tried.
-- *How big is it?* 60.1 million parameters, more than the original pix2pix
-  U-Net (about 54 million) because of the FiLM layers and the condition encoder.
-  That is large for 4,000 training images, which is one reason for the gap
-  between training and test accuracy.
-- *Alternatives?* A smaller U-Net with fewer channels; attention in the
-  bottleneck for long-range interactions; a vision transformer on patches; or
-  a non-learned geometric prior such as shifting the height map along the sun
-  direction (a shadow is the height map projected along the sun ray), which
-  could be built into the first layers.
+**Follow-ups:**
 
-**13. What is FiLM and why use it?**
+**"Why does a shadow problem need to see the whole scene?"**
+Because shadows can be long. Shadow length is height divided by the tangent of
+the sun angle. At 10 degrees, a building casts a shadow almost 6 times its
+height. The training data has sun as low as a couple of degrees. So a pixel
+can be shaded by a building far away. The 1 × 1 bottleneck sees the whole
+image.
 
-Short answer: FiLM (feature-wise linear modulation) lets the condition scale and
-shift every feature channel: y = γ · IN(x) + β, where γ and β are predicted
-from the sun embedding. It is applied in 13 blocks, so the sun affects both
-coarse and fine scales.
+**"Then why the skip connections?"**
+The bottleneck knows roughly "there's a tall building to the south-west". The
+skip connections know exactly which pixels are its edge. The decoder needs
+both.
+
+**"Why 4 × 4 convolutions with stride 2, not pooling?"**
+That's the pix2pix design. The network learns how to shrink instead of using a
+fixed max pool. A known side effect is a checkerboard pattern on the way back
+up.
+
+**"Why does enc8 have no normalisation?"**
+It's 1 × 1. Instance norm over one pixel subtracts the value from itself and
+gives zero, which would wipe out the bottleneck. enc1 has none either, like in
+pix2pix, so the first skip keeps the raw input values.
+
+**"What does dropout do here?"**
+Dropout 0.5 in the first three decoder layers, during training only, like
+pix2pix. In use, `model.eval()` turns it off, so the output is always the same
+for the same input. If I turned it back on and ran the model 20 times, the
+spread would give a cheap confidence estimate. That's called Monte Carlo
+dropout. I haven't tried it.
+
+**"How big is it?"**
+60.1 million parameters, a bit more than the original pix2pix U-Net, about 54
+million, because of the FiLM layers and the sun encoder. That's large for 4,000
+training images, which is one reason training accuracy is higher than test.
+
+**"What else could you use?"**
+A smaller U-Net. Attention in the middle for long-range effects. A vision
+transformer. Or build in the geometry: a shadow is just the height map pushed
+along the sun direction, so you could do that projection directly in the
+first layers.
+
+---
+
+**13. What is FiLM, and why use it?**
+
+**Say:**
+FiLM lets the sun decide how each feature channel is scaled and shifted. In
+each layer, I normalise the features, then multiply by a gamma and add a beta,
+and gamma and beta come from the sun's 128 numbers. I use it in 13 layers, so
+the sun affects both the big picture and the fine details.
 
 ```python
 class FiLMIN(nn.Module):
@@ -750,53 +807,63 @@ class FiLMIN(nn.Module):
         return gamma * x + beta
 ```
 
-Follow-ups:
-- *Why zero initialisation and + 1?* At the start γ = 1 and β = 0, so FiLM is the
-  identity and the network starts as a plain U-Net; the condition is introduced
-  gradually as the linear layer learns. Starting from random γ could scale some
-  channels to near zero or very large and make early GAN training unstable.
-- *Why not just concatenate the sun vector to the input image as extra
-  channels?* That works too (the bottleneck does something similar), but the
-  information then has to survive through all layers. FiLM injects it at every
-  scale. Also, concatenating constant channels to an image is wasteful: 36
-  constant maps of 256×256.
-- *Why InstanceNorm under FiLM?* Instance normalisation removes each image's
-  own channel statistics, and FiLM then sets them according to the sun. This is
-  the same idea as conditional instance normalisation and AdaIN in style
-  transfer, where the "style" decides the statistics. BatchNorm would mix
-  statistics across images with different suns in the same batch.
-- *Does InstanceNorm throw away useful information?* It can: the mean of a
-  feature map over the image (for example "how built-up is this scene") is
-  removed at every normalised layer and only comes back through β, which
-  depends on the sun, not the scene. The unnormalised enc1 skip and the
-  bottleneck keep some of it. Worth an experiment.
-- *How do you know the model actually uses the sun?* The symmetry probe: with
-  the same height map, reversing the order of the vectors changes the output a
-  lot (exact accuracy 59.8% → 29.0%), so the condition clearly drives the
-  output. A cleaner test: same scene, morning-only vs afternoon-only sun, and
-  check the shadows move to the correct side.
-- *Alternatives to FiLM?* Cross-attention between image features and the 9 sun
-  tokens (each pixel can attend to the hours relevant to it), or SPADE-style
-  spatial modulation. Cross-attention over the 9 vectors would also remove the
-  dependence on slot order.
+**Follow-ups:**
 
-**14. Why keep the 9 vectors in order instead of averaging them? Is that
-right?**
+**"Why start at zero and add 1?"**
+So at the start gamma is 1 and beta is 0, and FiLM does nothing. The network
+starts as a plain U-Net, and the sun's effect grows as training goes. If gamma
+started random, some channels could be almost switched off or blown up, and GAN
+training is already unstable.
 
-Short answer: averaging collapses the sun path into one direction, so "sunny in
-the morning, shaded in the afternoon" is lost, and very different days can
-average to the same vector. Keeping them in order keeps all the information.
-But the symmetry probe showed a cost: the label doesn't depend on the order, yet
-the model does. The physically right structure is a set function.
+**"Why not just add the sun to the input image as extra channels?"**
+That works too, but then the sun information has to survive through every
+layer. FiLM puts it in at every level. Also, 36 constant channels of 256 × 256
+is a lot of wasted input.
+
+**"Why instance norm under FiLM?"**
+Instance norm removes each image's own channel statistics. Then FiLM sets them
+based on the sun. It's the same idea as style transfer, where the style decides
+the statistics. Batch norm would mix statistics from images with different
+suns in the same batch.
+
+**"Does instance norm throw anything useful away?"**
+It can. The average of a feature over the image, like "how built-up is this
+scene", gets removed in every normalised layer, and only comes back through
+beta, which depends on the sun, not the scene. The first skip connection and
+the bottleneck keep some of it. Worth testing.
+
+**"How do you know the model actually uses the sun?"**
+From the symmetry test. Same height map, same sun vectors, just in reverse
+order, and the output changes a lot. So the sun clearly drives the output. A
+cleaner test would be: same scene, morning-only sun versus afternoon-only sun,
+and check the shadows switch sides.
+
+**"Alternatives to FiLM?"**
+Cross-attention: each pixel looks at the 9 sun vectors and picks the hours that
+matter to it. That would also stop the order from mattering. Or SPADE, if the
+condition changed across the image.
+
+---
+
+**14. Why keep the 9 sun vectors in order instead of averaging them?**
+
+**Say:**
+If you average them, the whole day collapses into one direction. You lose
+"sunny in the morning, shaded in the afternoon", and very different days can
+average to the same thing. Keeping them in order keeps everything. But my
+symmetry test showed a cost. The right answer doesn't depend on the order, but
+the model does. If I just reverse the order, accuracy halves. So the right
+design is something that doesn't care about order, but still keeps the
+information.
 
 Results of `training/probe_symmetry.py` (50 test scenes):
 
-| Variant | What changes | Label | Exact | Within ±1 h |
-|---|---|---|---|---|
-| original | nothing | same | 59.8% | 91.1% |
-| reversed_order | the 9 vectors in reverse order | same | 29.0% | 72.7% |
-| mirror_east_west | image left-right, x negated, order reversed | mirrored | 50.2% | 84.7% |
-| mirror_north_south | image top-bottom, y negated | mirrored | 52.5% | 86.4% |
+| What I changed | Right answer | Exact | Within 1 h |
+|---|---|---|---|
+| nothing | same | 59.8% | 91.1% |
+| sun vectors in reverse order | same | 29.0% | 72.7% |
+| mirror east-west (flip image left-right, flip x of the sun, reverse order) | mirrored | 50.2% | 84.7% |
+| mirror north-south (flip image top-bottom, flip y of the sun) | mirrored | 52.5% | 86.4% |
 
 ```python
 def transform(A, B, vectors, variant):
@@ -812,41 +879,49 @@ def transform(A, B, vectors, variant):
     return np.ascontiguousarray(A), np.ascontiguousarray(B), v
 ```
 
-Follow-ups:
-- *What is a set function here?* Sum (or mean) over hours of a learned function
-  of each vector, then a second network: ρ(Σ φ(sᵢ)). This is the DeepSets form.
-  Unlike plain averaging of the raw vectors, the learned φ lifts each direction
-  into many features before summing, so no information is lost, and the output
-  is the same for any order.
-- *Why does the physics say set?* Direct sun hours = Σᵢ lit(pixel, sᵢ). It is a
-  sum over the hours of a per-hour quantity, so order is irrelevant by
-  definition. The per-hour shadow mask idea in question 10 is the most literal
-  version.
-- *Why did reversing the order hurt so much?* In training slot 0 always held the
-  earliest daylight hour, so the network learned slot-specific weights. Reversed
-  input is outside anything it has seen. It is a clear sign of shortcut
-  learning: correlations that hold in the data but not in the physics.
-- *Why are the mirrored scenes 7–10 points worse than the originals, when they
-  are physically valid inputs?* Mirrored scenes (for example, the sun moving
-  through the north at a northern latitude) are rarer or absent in the
-  training distribution, so this measures how far the model has learned
-  geometry versus the specific sun paths it saw. The latitude range explains
-  part of it: training covers 35°S to 65°N, so mirroring a scene at 50°N
-  north-south imitates a site at 50°S, a sun path the model never saw.
-- *How would you fix it cheaply?* Augment with physically valid transforms:
-  rotate and mirror scenes together with their sun vectors, and shuffle the
-  order. Zero labelling cost, because the labels transform exactly.
+**Follow-ups:**
 
-### F. Loss functions and the discriminator
+**"What would an order-free design look like?"**
+Run each sun vector through a small network, add up the results, then pass the
+sum through another small network. That's called DeepSets. It's different from
+averaging the raw vectors: each direction first becomes many features, so
+nothing is lost. And the result is the same in any order.
 
-**15. What exactly is the loss?**
+**"Why is order-free the right physics?"**
+Because sun hours is literally a sum over the hours: lit at 9, plus lit at 10,
+and so on. A sum doesn't care about order. The shadow-mask idea from question
+10 is the most direct version of this.
 
-Short answer: generator loss = least-squares GAN loss + 50 × L1. L1 keeps the
-values right everywhere; the GAN term penalises outputs that a discriminator
-can tell apart from real simulation results, which mainly sharpens edges.
+**"Why did reversing hurt so much?"**
+In training, slot 0 always held the earliest sunny hour. So the network learned
+weights that are tied to each slot. Reversed input is something it has never
+seen. It learned a shortcut that holds in the data but not in the physics.
+
+**"Why are the mirrored scenes worse, when they're valid?"**
+Partly because the model hasn't seen those sun paths. Training covers 35°S to
+65°N. If you mirror a scene at 50°N north-south, it looks like a site at 50°S,
+which isn't in the training data. So it tells me how much the model learned
+geometry versus the sun paths it happened to see.
+
+**"How would you fix it cheaply?"**
+Augmentation that respects the physics. Rotate or mirror the scene together
+with the sun, and shuffle the order. It costs nothing, because the right
+answer transforms exactly the same way, no new simulation needed.
+
+---
+
+### F. Loss and discriminator
+
+**15. What's your loss?**
+
+**Say:**
+Two parts. An L1 loss, the average pixel difference from the real answer,
+times 50. And a GAN loss, which is a second network, the discriminator, trying
+to tell my output from a real Ladybug result. L1 keeps the values right. The
+GAN part pushes the edges to be sharp.
 
 ```python
-criterionGAN = nn.MSELoss()      # least-squares GAN (LSGAN); pix2pix uses cross-entropy
+criterionGAN = nn.MSELoss()      # least-squares GAN; pix2pix uses cross-entropy
 criterionL1 = nn.L1Loss()
 L1_LAMBDA = 50.0                 # pix2pix uses 100
 
@@ -857,45 +932,55 @@ loss_G_L1 = criterionL1(fake_B, real_B) * L1_LAMBDA
 loss_G = loss_G_GAN + loss_G_L1
 ```
 
-Follow-ups:
-- *Why L1 and not L2 for the reconstruction?* When the model is unsure between
-  two values, L2 is minimised by their mean, L1 by their median. The mean of
-  "shadow" and "no shadow" is a grey band; the median picks one, so L1 blurs
-  less. L1 is also less dominated by a few large errors.
-- *Why a GAN at all, if L1 alone gives a reasonable map?* L1 alone still blurs
-  shadow edges where the model is uncertain. The adversarial term rewards
-  outputs that look like real Ladybug maps, which have sharp edges.
-- *Is a GAN the right tool for a physics surrogate?* This is the critical
-  question, and the honest answer is: not obviously. A GAN rewards looking
-  realistic, not being correct. It can draw a sharp edge in the wrong place,
-  which looks better than a blurry edge in the right place but scores worse. For
-  a surrogate, sharpness is only useful if it is accurate. I would now compare
-  against L1 only, and against a classification or ordinal loss, which avoid
-  the blur problem without an adversary.
-- *Why LSGAN instead of the original cross-entropy loss?* With cross-entropy,
-  once the discriminator is confident the generator's gradient becomes very
-  small (the sigmoid saturates). The least-squares loss keeps penalising
-  samples by how far they are from the target, so gradients don't vanish as
-  easily and training is usually more stable. Not verified by an ablation here.
-- *Why λ = 50 instead of 100?* A lower L1 weight gives the adversarial term more
-  relative influence, aiming for sharper edges. Not tuned systematically; the
-  honest answer is that it was a judgement call, and an ablation over
-  {0 (GAN only), 10, 50, 100, L1 only} is the obvious experiment.
-- *What are the magnitudes of the two terms?* The training log prints them
-  (`GAN:` and `L1:`). The logs weren't kept, so say you didn't record them and
-  that you would log both terms per epoch next time.
+**Follow-ups:**
+
+**"Why L1 and not L2?"**
+When the model isn't sure between two values, L2 picks the average and L1
+picks the middle one. The average of "shadow" and "no shadow" is a grey blur.
+L1 picks one of them, so it's less blurry. It also isn't dominated by a few big
+errors.
+
+**"Why a GAN at all, if L1 works?"**
+L1 alone still blurs shadow edges where the model is unsure. The discriminator
+rewards outputs that look like real Ladybug maps, and real maps have sharp
+edges.
+
+**"Is a GAN the right tool for a physics model?"**
+Honestly, I'm not sure it is. A GAN rewards looking real, not being right. It
+can draw a sharp edge in the wrong place, and that looks better than a blurry
+edge in the right place. For a physics surrogate, sharpness only helps if it's
+accurate. Now I'd compare against L1 alone, and against a classification loss,
+which avoids the blur without a second network.
+
+**"Why least-squares instead of the normal GAN loss?"**
+With the normal loss, once the discriminator is confident, the generator's
+gradient almost disappears. The least-squares version keeps pushing in
+proportion to how far off you are, so training is usually more stable. I
+didn't test it against the original.
+
+**"Why 50 instead of 100?"**
+A lower L1 weight gives the GAN part more say, aiming for sharper edges. It was
+a judgement call, not tuned. The obvious experiment is to try GAN only, 10,
+50, 100, and L1 only.
+
+**"How big were the two terms during training?"**
+The script prints both, but I didn't keep the logs. Next time I'd log both
+every epoch.
+
+---
 
 **16. What does the discriminator look like?**
 
-Short answer: a conditional PatchGAN. It sees the height map, a sun-hours map
-(real or generated) and the sun embedding, and outputs a 30×30 grid of scores,
-each judging one 70×70-pixel patch.
+**Say:**
+It's a conditional PatchGAN. It looks at the height map, a sun-hours map, real
+or generated, and the sun. Instead of one real-or-fake score, it gives a 30 ×
+30 grid of scores, each judging a 70 × 70 pixel patch.
 
 ```python
 class ConditionalDiscriminator(nn.Module):
     def __init__(self, input_nc=6, vec_dim=36, emb_dim=128, cond_ch=16):
         super().__init__()
-        self.cond_enc = SunConditionEncoder(emb_dim=emb_dim)   # its own encoder
+        self.cond_enc = SunConditionEncoder(emb_dim=emb_dim)   # its own sun encoder
         self.cond_to_map = nn.Sequential(nn.Linear(emb_dim, cond_ch), nn.LeakyReLU(0.2, True))
         in_c = input_nc + cond_ch                               # 3 + 3 + 16 = 22
         self.model = nn.Sequential(
@@ -913,26 +998,37 @@ class ConditionalDiscriminator(nn.Module):
         return self.model(torch.cat([x, y, c], dim=1))
 ```
 
-Follow-ups:
-- *How do you get 70×70?* Work backwards from one output: the last two layers
-  (kernel 4, stride 1) give 4, then 7; each stride-2 layer gives (r − 1) × 2 + 4:
-  16, 34, 70.
-- *Why patches instead of one score?* The global structure is already enforced by
-  L1; the discriminator only needs to judge local texture and edges. A patch
-  discriminator has fewer parameters and works on any image size.
-- *But shadows are non-local. Can a 70×70 patch judge them?* No. It can judge
-  whether an edge is sharp, not whether a shadow 150 pixels long is correct for
-  this sun. That is another reason the GAN term is about appearance, not physics.
-- *Why condition the discriminator on the height map and the sun?* Without them
-  it could only ask "does this look like a sun-hours map", and the generator
-  could output any realistic map. With them it asks "is this the right map for
-  this scene and this sun". The sun goes in as 16 constant channels.
-- *Why does it have its own condition encoder?* So the generator and the
-  discriminator don't share parameters they optimise in opposite directions.
+**Follow-ups:**
+
+**"Where does 70 × 70 come from?"**
+Work backwards from one output pixel. The last two layers have kernel 4 and
+stride 1, so 4, then 7. Each stride-2 layer doubles it and adds a bit: 16, 34,
+70.
+
+**"Why patches instead of one score?"**
+L1 already takes care of the big picture. The discriminator only needs to judge
+local things, like whether edges are sharp. A patch discriminator is smaller
+and works on any image size.
+
+**"But shadows are long. Can a 70-pixel patch judge them?"**
+No. It can judge whether an edge is sharp, not whether a 150-pixel shadow is
+the right length for this sun. That's another reason the GAN part is about
+looks, not physics.
+
+**"Why give it the height map and the sun too?"**
+Without them, it could only ask "does this look like a sun-hours map?", and
+the generator could output any realistic map. With them, it asks "is this the
+right map for this scene and this sun?".
+
+**"Why does it have its own sun encoder?"**
+So the generator and discriminator don't share weights that they're training
+in opposite directions.
+
+---
 
 ### G. Training
 
-**17. What are the training settings, and why?**
+**17. What were your training settings?**
 
 ```python
 BATCH_SIZE = 16
@@ -945,27 +1041,38 @@ optG = optim.Adam(netG.parameters(), lr=LR, betas=(0.5, 0.999))
 optD = optim.Adam(netD.parameters(), lr=LR, betas=(0.5, 0.999))
 ```
 
-Short answer: Adam with β₁ = 0.5, learning rate 1e-4 for both networks, batch
-16, 200 epochs, constant learning rate. 4,000 images / 16 = 250 steps per epoch,
-so the released epoch-195 model saw about 49,000 updates.
+**Say:**
+Adam with learning rate 1e-4 for both networks, beta1 of 0.5, batch size 16,
+200 epochs, and the learning rate stays the same the whole time. 4,000 images
+in batches of 16 is 250 steps an epoch, so the released model, epoch 195, saw
+about 49,000 updates. I trained it on my own PC with an RTX 3060 Ti.
 
-Follow-ups:
-- *Why β₁ = 0.5?* β₁ controls momentum, how much of the past gradients Adam
-  keeps. In a GAN the target moves because the other network keeps changing,
-  so old gradients go stale; less momentum reacts faster and oscillates less.
-  It is the DCGAN and pix2pix default.
-- *How does this differ from pix2pix?* pix2pix uses lr 2e-4, batch 1, and keeps
-  the rate constant for 100 epochs then decays it linearly to zero over another
-  100. Here: lower rate, larger batch, no decay. The decay usually helps the last
-  part of training; not having it is a missed detail.
-- *Why batch 16 with InstanceNorm?* InstanceNorm doesn't depend on the batch, so
-  batch size only affects gradient noise and speed. 16 fits in memory at 256 px.
-- *How long did it take, on what?* On one desktop: Intel Core i7 (9th gen), RTX 3060 Ti (8 GB), 32 GB RAM. I didn't record the training time.
-- *Why 200 epochs, and how do you know it wasn't over- or under-trained?* 200 is
-  the pix2pix schedule. There was no validation set, so I can't show the best
-  epoch. The training subset scores 70.3% exact against 59.3% on test, so
-  there is some overfitting; with a validation split I would pick the
-  checkpoint by validation within-1-hour accuracy.
+**Follow-ups:**
+
+**"Why beta1 of 0.5?"**
+Beta1 is how much Adam remembers past gradients. In a GAN, the other network
+keeps changing, so old gradients go stale fast. Less memory reacts faster and
+wobbles less. It's the standard for DCGAN and pix2pix.
+
+**"How is that different from pix2pix?"**
+pix2pix uses learning rate 2e-4, batch size 1, and after 100 epochs it lowers
+the learning rate step by step to zero. I used a lower rate, a bigger batch,
+and no decay. The decay usually helps at the end, so not having it is a miss.
+
+**"Why batch 16 with instance norm?"**
+Instance norm doesn't depend on the batch, so batch size only changes how
+noisy the gradients are and how fast it trains. 16 fits in memory at 256 px.
+
+**"How long did training take?"**
+I didn't record it. It was on one desktop: an i7, an RTX 3060 Ti, 32 GB RAM.
+
+**"Why 200 epochs? How do you know it wasn't over- or under-trained?"**
+200 is the pix2pix default. I didn't have a validation set, so I can't show
+which epoch was best. Training accuracy is 70% exact versus 59% on test, so
+there is some overfitting. With a validation split, I'd pick the checkpoint by
+within-1-hour accuracy on it.
+
+---
 
 **18. Walk me through one training step.**
 
@@ -977,8 +1084,8 @@ for i, batch in enumerate(dataloader):
     optD.zero_grad(set_to_none=True)
     with torch.no_grad():
         fake_B = netG(real_A, vec)                  # no graph for G here
-    pred_real = netD(real_A, real_B, vec)           # target 1
-    pred_fake = netD(real_A, fake_B.detach(), vec)  # target 0
+    pred_real = netD(real_A, real_B, vec)           # should say 1
+    pred_fake = netD(real_A, fake_B.detach(), vec)  # should say 0
     loss_D = (criterionGAN(pred_real, torch.ones_like(pred_real)) +
               criterionGAN(pred_fake, torch.zeros_like(pred_fake))) * 0.5
     loss_D.backward()
@@ -987,35 +1094,45 @@ for i, batch in enumerate(dataloader):
     # 2) generator
     optG.zero_grad(set_to_none=True)
     fake_B = netG(real_A, vec)                      # again, now with a graph
-    pred_fake_for_g = netD(real_A, fake_B, vec)     # target 1: fool D
+    pred_fake_for_g = netD(real_A, fake_B, vec)     # try to make D say 1
     loss_G = criterionGAN(pred_fake_for_g, torch.ones_like(pred_fake_for_g)) \
              + criterionL1(fake_B, real_B) * L1_LAMBDA
     loss_G.backward()
     optG.step()
 ```
 
-Follow-ups:
-- *Why run the generator twice?* The first pass is inside `no_grad` and only
-  produces inputs for the discriminator, which saves memory. The second builds
-  the graph needed for the generator update. Reusing one pass with `detach()`
-  for D is the more common pattern and saves one forward pass.
-- *Why multiply the discriminator loss by 0.5?* pix2pix does it to slow the
-  discriminator relative to the generator.
-- *Does the generator update change the discriminator?* `loss_G.backward()`
-  computes gradients for D's parameters too, but only `optG.step()` is called,
-  and `optD.zero_grad()` clears them at the start of the next step.
-- *Which mode is the generator in during training?* `train()`: dropout is on and
-  InstanceNorm uses the current image's statistics (InstanceNorm has no running
-  statistics by default, so train and eval normalise the same way; only dropout
-  differs).
+**Say:**
+They take turns. First the discriminator: the generator makes a fake, the
+discriminator sees a real pair and a fake pair, and learns to say 1 for real
+and 0 for fake. Then the generator: it makes a fake again, and is trained to
+make the discriminator say 1, plus stay close to the real answer through L1.
 
-**19. Was GAN training unstable? How did you monitor it?**
+**Follow-ups:**
 
-Short answer: progress was judged by the printed losses and by an HTML page that
-shows input, prediction and ground truth for one fixed training sample every 5
-epochs. If you don't remember specific instability, say so: you watched the
-losses and the preview images and didn't keep logs, which is the weakness the
-follow-ups below are about.
+**"Why run the generator twice?"**
+The first run is only to give the discriminator something to look at, so it
+skips tracking gradients to save memory. The second run tracks them, because
+the generator needs them to update. The more common way is one run with
+`detach()`, which saves a forward pass.
+
+**"Why multiply the discriminator loss by 0.5?"**
+pix2pix does that to slow the discriminator down a bit compared to the
+generator.
+
+**"Does the generator step change the discriminator?"**
+The backward pass computes gradients for the discriminator too, but only the
+generator's optimiser takes a step. The discriminator's gradients are cleared
+at the start of the next step.
+
+---
+
+**19. Was GAN training unstable? How did you keep track of it?**
+
+**Say:**
+I watched the printed losses, and every 5 epochs the script saved the input,
+the prediction and the real answer for one fixed training image into a web
+page, so I could see it improve. I don't remember specific problems, and I
+didn't keep the logs. Looking back, that monitoring was weak.
 
 ```python
 if epoch % SAVE_EPOCH_FREQ == 0 or epoch == EPOCHS - 1:
@@ -1027,104 +1144,125 @@ if epoch % SAVE_EPOCH_FREQ == 0 or epoch == EPOCHS - 1:
     netG.train()
 ```
 
-Follow-ups:
-- *What is wrong with monitoring one training image?* It is a training image, so
-  it shows memorisation as progress, and one image is not a statistic. GAN loss
-  values also don't tell you about quality: both losses can stay flat while
-  outputs improve or degrade.
-- *What should you monitor?* Within-1-hour accuracy and MAE on a held-out
-  validation set every few epochs, plus a fixed panel of validation images
-  covering short days, low sun and high-rise scenes.
-- *What failure modes do GANs have?* Discriminator wins too early and the
-  generator gets no useful gradient; oscillation; mode collapse (the same output
-  for different inputs). Mode collapse is less of a problem in pix2pix-style
-  training because the L1 term ties each output to its own label.
+**Follow-ups:**
+
+**"What's wrong with watching one training image?"**
+It's a training image, so memorising looks like progress. And one image isn't
+a measurement. GAN losses don't tell you much about quality either: both can
+stay flat while the output gets better or worse.
+
+**"What should you watch instead?"**
+Within-1-hour accuracy and mean error on a held-out validation set every few
+epochs. Plus a fixed set of validation images: short days, low sun, high-rise.
+
+**"What usually goes wrong with GANs?"**
+The discriminator wins too early and the generator stops learning. Or the two
+keep swinging back and forth. Or mode collapse, where the generator gives the
+same output for different inputs. That's less of a problem in pix2pix, because
+L1 ties every output to its own answer.
+
+---
 
 ### H. Data
 
-**20. How was the dataset generated?**
+**20. How did you make the dataset?**
 
-Short answer: a Grasshopper script (`gh_scripts/data-generator.gh`) randomly
-subdivides a site and extrudes each plot into a building, sampling height,
-density and footprint shape (polygon, rectangle, circle, L-shape, …) by
-category. For each scene it picks a random location and date, computes direct
-sun hours from 9:00 to 17:00 with Ladybug, and saves the height map and the
-Ladybug image side by side, plus the sun vectors in a log file. 4,000 scenes for
-training, 200 for testing.
+**Say:**
+I wrote a Grasshopper script. It starts from a 1 km square site, stretches it
+randomly, splits it into plots, and extrudes each plot into a building, with
+height, density and footprint shape sampled by category. Then it picks a random
+place between 35°S and 65°N and a random date, and runs Ladybug for 9 to 5. It
+saves the height map and Ladybug's image side by side, plus the sun vectors in
+a log. 4,000 scenes for training and 200 for testing.
 
 ```python
-# each training file is one 1024×512 PNG: height map left, label right
+# each training file is one 1024 × 512 PNG: height map left, label right
 w_half = img.shape[1] // 2
 real_A, real_B = img[:, :w_half, :], img[:, w_half:, :]
 vec = self.vector_map.get(img_id, torch.zeros(VEC_DIM, dtype=torch.float32))
 ```
 
-What the data actually contains (measured on 2026-10-20):
+What's in the data (measured):
 
 | | Training (4,000) | Test (200) |
 |---|---|---|
-| Scenes with all 9 daylight hours | 56% | 84% |
-| Scenes with 3–6 daylight hours | 13% | 4.5% |
-| Median of the day's highest sun altitude | 37.6° | 54.6° |
+| Days with all 9 hours of sun | 56% | 84% |
+| Days with 3–6 hours of sun | 13% | 4.5% |
+| Typical highest sun of the day (median) | 37.6° | 54.6° |
 | Site share of the image | | 19–44% (median 30%) |
-| Building share of the site | | 2.5–30% (median 13%) |
-| Height categories | mixed | 51 low-rise, 49 mid-rise (ids 0000–0099), 100 high-rise (0100–0199) |
-| Shares site outline and sun vectors with a training scene | | 199 of 200 (current files, not the original test set) |
+| Buildings' share of the site | | 2.5–30% (median 13%) |
+| Height mix | mixed | 51 low, 49 mid, 100 high-rise |
 
-Follow-ups:
-- *Is the test set representative of the training set?* Not quite: the test set
-  has many more full summer-like days (84% vs 56% with 9 daylight hours) and a
-  higher sun. Low sun means long shadows, the hardest case, so the test set is
-  probably easier than the training distribution and the reported accuracy may
-  be optimistic for winter.
-- *Are test and training scenes independent?* Describe the set the numbers come
-  from, as it is: "The test scenes reuse the site outlines and sun conditions
-  of training scenes, with new building layouts. So the numbers show the model
-  handles buildings it hasn't seen, not new sites, latitudes or dates. A
-  cleaner test would hold out whole locations and dates, or a whole building
-  category." No need to bring up the lost original test set unless asked.
-- *Is the test set representative of real cities?* No. It comes from the same
-  generator as the training data, so it measures interpolation within that
-  family of forms, not generalisation to real, irregular cities. That is the
-  biggest gap in the evaluation. The test I would add: real city blocks from
-  OpenStreetMap building footprints with heights, labelled by Ladybug.
-- *Why 4,000? How did you choose it?* Not chosen systematically; it was what was practical to generate (tens of seconds to a minute per scene). A learning curve
-  (accuracy vs. 500, 1,000, 2,000, 4,000 training scenes) would show whether
-  more data still helps.
-- *Ranges of location and date?* Latitude 35°S–65°N, longitude anywhere, date anywhere in the year, uniformly random; 9:00–17:00 in local solar time.
-- *How does Ladybug compute the label?* For each grid point, a ray toward each of
-  the sun positions; count unblocked rays. Grid 5 m, offset 0.2 m, hourly.
-- *What does a 5 m grid mean for the label?* The ground truth itself only has
-  one value per 5 m cell, while one model pixel is 2.8–6.1 m. So the label is
-  as coarse as the model's pixels, and a shadow edge in the label is only
-  accurate to about one cell. Part of the one-hour errors at boundaries is
-  therefore disagreement with a coarse label, not necessarily model error: the
-  model can't be judged more precisely than its ground truth.
-- *Why 5 m and not 1 m?* With 600–1300 m sites, 1 m would mean up to 1.6
-  million points and 9 rays each per scene, 25 times the cost of 5 m, for
-  thousands of scenes. 5 m keeps data generation affordable; the price is the
-  coarse label.
-- *Are roofs part of the label?* Yes: roof pixels are coloured, mostly 8–9 hours.
-  They make up 13% of the site pixels and are less accurate than ground pixels
-  (MAE 0.92 h vs 0.50 h). A likely reason: roof edges, where the height map and
-  the label disagree by a pixel, are a large share of a small roof. Not tested.
-- *Why no augmentation?* Not done. Valid augmentations here must transform the
-  sun with the scene: rotate the image by 90° and rotate the vectors about z;
-  mirror the image and mirror the vectors. Colour jitter or random crops would
-  be wrong (crops change what can cast a shadow into the frame).
-- *Could the test set leak into training?* Not by id (separate folders and
-  logs), but a random generator can produce near-duplicates. With continuous
-  random parameters exact duplicates are unlikely.
+**Follow-ups:**
+
+**"Is the test set like the training set?"**
+Not quite. The test set has many more long summer-like days, 84% versus 56%,
+and the sun is higher. Low sun means long shadows, the hardest case. So the
+test set is probably a bit easier, and the numbers may be optimistic for
+winter.
+
+**"Are test and training scenes independent?"**
+The test scenes have new building layouts, but they reuse the site outlines
+and sun conditions of training scenes. So the numbers show the model handles
+buildings it hasn't seen, not new sites, places or dates. A cleaner test would
+hold out whole locations and dates, or a whole building category.
+
+**"Does it work on real cities?"**
+I can't say yet. All my scenes come from my own generator. The biggest missing
+test is real city blocks, for example from OpenStreetMap footprints with
+heights, labelled with Ladybug.
+
+**"Why 4,000?"**
+It wasn't chosen carefully. It's what was practical to generate at up to a
+minute per scene. A learning curve, training on 500, 1,000, 2,000 and 4,000,
+would show whether more data still helps.
+
+**"What settings did Ladybug use?"**
+A 5 m grid, points 0.2 m above the surface, one sun position per hour.
+
+**"What does a 5 m grid mean for the label?"**
+The right answer itself only has one value every 5 m, and one model pixel is
+2.8 to 6.1 m. So the label is about as coarse as the model, and its shadow
+edges are only right to about one cell. Some of the one-hour errors at edges
+are really the model disagreeing with a coarse label. The model can't be
+judged more precisely than its labels.
+
+**"Why not a 1 m grid?"**
+With sites up to 1.3 km, a 1 m grid is about 1.6 million points per scene, 25
+times the work of 5 m, for thousands of scenes. 5 m kept it affordable. The
+price is a coarser label.
+
+**"Why 0.2 m above the surface, when Eddy3D uses 0.918 m?"**
+They answer different questions. Sun-hour rules look at sun on the ground and
+open space, so the points sit just above the surface; the 0.2 m only stops the
+ray hitting the surface it starts on. Eddy3D's sky exposure is about how a
+standing person feels, so it starts at the middle of a person's height.
+
+**"Are roofs part of the label?"**
+Yes. Roofs are 13% of the site pixels, mostly 8 or 9 hours. Surprisingly the
+model does worse on roofs than on the ground, mean error 0.92 versus 0.50
+hours. My guess is roof edges: on a small roof, a one-pixel mismatch between
+height map and label is a big part of the roof. I haven't tested that.
+
+**"Why no augmentation?"**
+I didn't do it. The right kind here moves the sun with the scene: rotate the
+image and rotate the sun vectors the same way, or mirror both. Colour changes
+or random crops would be wrong, because cropping changes what can cast a
+shadow into the frame.
+
+---
 
 ### I. Evaluation
 
-**21. How did you compute the accuracy?**
+**21. How did you measure accuracy?**
 
-Short answer: with `training/evaluate_model.py` on the 200 held-out scenes. Both
-the prediction and the ground truth are snapped to the nearest of the 10 legend
-colours in Lab space, which turns them into hours 0..9, and only pixels inside
-the site are compared. I report exact class, within ±1 hour, and mean absolute
-error in hours, against a no-shadow baseline.
+**Say:**
+I ran the model on the 200 test scenes. Both the prediction and Ladybug's
+answer are colour images, so I turn each pixel back into hours by finding the
+closest legend colour. Then I compare pixel by pixel, only inside the site. I
+report three things: exactly right, within one hour, and the average error in
+hours. And I compare against a baseline that ignores buildings and gives every
+pixel full sun.
 
 ```python
 LEGEND_HEX = ["0000ff", "3a00c4", "770088", "b2004c", "e80014",
@@ -1132,7 +1270,7 @@ LEGEND_HEX = ["0000ff", "3a00c4", "770088", "b2004c", "e80014",
 
 def to_hours(rgb):
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).reshape(-1, 1, 3).astype(np.float32)
-    d = ((lab - LEGEND_LAB[None]) ** 2).sum(-1)       # squared distance to each colour
+    d = ((lab - LEGEND_LAB[None]) ** 2).sum(-1)       # distance to each legend colour
     return d.argmin(1).reshape(rgb.shape[:2])
 
 site = ~np.all(A_s == 255, axis=2)                    # inside the site
@@ -1140,58 +1278,67 @@ t = to_hours(B_s)[site]
 p = to_hours(pred_rgb)[site]
 err = np.abs(p - t)
 maxh = min(len(e["vectors"]), 9)
-base = np.full_like(t, maxh)                          # no-shadow baseline
+base = np.full_like(t, maxh)                          # baseline: full sun everywhere
 ```
 
-| Metric (3.97 M site pixels) | Model | No-shadow baseline |
+| Over 3.97 million site pixels | Model | No-shadow baseline |
 |---|---|---|
-| Exact hour class | 59.3% | 39.8% |
-| Within ±1 hour | 90.8% | 53.6% |
-| MAE | 0.56 h | 2.18 h |
+| Exactly right | 59.3% | 39.8% |
+| Within 1 hour | 90.8% | 53.6% |
+| Mean error | 0.56 h | 2.18 h |
 
-Follow-ups:
-- *Why Lab?* Euclidean distance in RGB doesn't match perceived colour
-  difference; Lab is designed so that it roughly does. The model's colours are
-  never exactly on the legend, so the match to the nearest legend colour must be
-  reliable. Strictly, the best space would be the one the legend was built in:
-  an interpolation in hours, which is what predicting hours directly avoids.
-- *Why this baseline?* It is what you get by ignoring the buildings, so the gap
-  shows how much the model learned about shadows. A stronger baseline would be
-  more convincing: for example a simple geometric shadow projection, or a plain
-  U-Net trained with L1 only.
-- *Why is exact accuracy only 59%?* Sun hours change in steps of one hour across
-  a shadow edge, and a one-pixel shift of an edge flips a pixel's class. 76% of
-  site pixels are within 2 pixels of a class boundary; there exact accuracy is
-  49%, against 91% inside uniform regions. Within ±1 hour and MAE are more
-  meaningful for design.
-- *Pixel-weighted or image-weighted?* Pixel-weighted over the whole test set;
-  per-image mean exact accuracy is 58.5%, and the worst image is 37.9%, so
-  there is real variation between scenes.
-- *Is 0.56 h good enough for design?* It depends on the decision. For "is this
-  courtyard above or below 2 hours", what matters is the error near the
-  threshold. A decision-level metric would be: the share of area classified on
-  the correct side of the threshold, and the error in total area above it.
-- *What about statistical uncertainty?* With 200 scenes, a bootstrap over scenes
-  would give a confidence interval; scene-to-scene variation dominates, not
-  pixel count. Not computed.
+**Follow-ups:**
 
-**22. Where does the model fail?**
+**"Why match colours in Lab and not RGB?"**
+In RGB, the distance between two colours doesn't match how different they
+look. Lab is designed so it roughly does. The model's colours never exactly
+hit the legend, so I need the closest match to be reliable.
 
-Short answer: at shadow edges, in high-rise scenes, on roofs, and in the low
-range of hours, where it tends to predict too much sun.
+**"Why that baseline?"**
+It's what you get if you ignore the buildings, so the gap shows how much the
+model learned about shadows. A stronger baseline would be more convincing,
+like a simple geometric shadow projection, or a plain U-Net with L1 only.
 
-| Breakdown | Exact | Within ±1 h | MAE |
+**"Why is exact accuracy only 59%?"**
+Sun hours change in one-hour steps across a shadow edge, so if an edge is off
+by one pixel, that pixel is off by an hour. 76% of site pixels are within 2
+pixels of an edge. There, it's 49% exact. Away from edges, it's 91%. For
+design, within one hour and the mean error matter more.
+
+**"Is that per pixel or per image?"**
+Per pixel, over the whole test set. Averaged per image it's 58.5% exact, and
+the worst image is 38%. So scenes do vary.
+
+**"Is half an hour of error good enough for design?"**
+Depends on the decision. If the question is "is this courtyard above 2 hours",
+what matters is the error near 2 hours. A better metric would be: how much of
+the area lands on the right side of the threshold.
+
+**"What about statistical uncertainty?"**
+With 200 scenes, I'd resample scenes, a bootstrap, to get a confidence
+interval. The variation between scenes matters more than the pixel count. I
+haven't done it.
+
+---
+
+**22. Where does the model go wrong?**
+
+**Say:**
+At shadow edges, in high-rise scenes, on roofs, and in shaded areas, where it
+tends to predict too much sun.
+
+| Where | Exact | Within 1 h | Mean error |
 |---|---|---|---|
-| Near class boundaries (76% of pixels) | 49.2% | 88.2% | 0.70 h |
-| Inside uniform regions (24%) | 90.8% | 99.2% | 0.10 h |
+| Near shadow edges (76% of pixels) | 49.2% | 88.2% | 0.70 h |
+| Away from edges (24%) | 90.8% | 99.2% | 0.10 h |
 | Low- and mid-rise scenes (100) | 71.4% | 94.1% | 0.40 h |
 | High-rise scenes (100) | 46.8% | 87.5% | 0.73 h |
-| Ground pixels (86%) | 60.4% | 92.3% | 0.50 h |
-| Roof pixels (13%) | 52.9% | 81.2% | 0.92 h |
-| Training subset (49 scenes) | 70.3% | 95.4% | 0.38 h |
+| Ground (86%) | 60.4% | 92.3% | 0.50 h |
+| Roofs (13%) | 52.9% | 81.2% | 0.92 h |
+| Training scenes (49) | 70.3% | 95.4% | 0.38 h |
 
 ```python
-# evaluate_model.py: class-boundary band, the true class changes within 2 px
+# evaluate_model.py: pixels where the true answer changes within 2 px
 T8 = T.astype(np.uint8)
 band = (cv2.dilate(T8, kernel) != cv2.erode(T8, kernel)) & site   # kernel 5×5
 for name, msk in (("near_class_boundary", band), ("uniform_region", site & ~band),
@@ -1201,40 +1348,46 @@ for name, msk in (("near_class_boundary", band), ("uniform_region", site & ~band
 sc = scenes["high_rise" if (A_s[..., 0] < 128).any() else "low_rise"]
 ```
 
-Follow-ups:
-- *Why are high-rise scenes harder?* Longer shadows, more overlapping shadows
-  from several buildings, and more pixels in partial shade (values in the middle
-  of the range), which are the hardest classes. Possibly also clipping: towers
-  above 250 m all look like 250 m.
-- *What is the bias pattern?* For true values of 0 to 3 hours, 36–44% of pixels
-  are predicted too high and at most 26% too low, so shaded areas come out too
-  sunny.
-  From 4 to 8 hours errors are balanced. The 9-hour class has the highest recall
-  (82%) because it is a third of all pixels and the easiest (no shadow). Classes
-  2–6 have recall around 39–47%.
-- *Why would shaded areas be predicted too sunny?* Class imbalance: 33% of
-  pixels are 9 hours and only 3.8% are 0 hours, so the model is pulled toward
-  sunny values. A weighted loss or the per-hour mask formulation would address
-  it.
-- *Is the gap between training and test overfitting?* Partly: 11 points in exact
-  accuracy, 4.6 in within ±1 h. The test set is also distributed differently
-  from the training set (question 20), which muddies the comparison.
-- *What does the symmetry probe add?* It tests something accuracy can't: whether
-  the model behaves consistently with the physics on inputs that should be
-  equally easy. The order sensitivity is a structural flaw, not noise.
+**Follow-ups:**
 
-### J. System and deployment
+**"Why are high-rise scenes harder?"**
+Longer shadows, shadows from several buildings overlapping, and more pixels in
+partial shade, which are the hardest values. Also, towers above 250 m all look
+like 250 m. And the unknown scale probably hurts long shadows the most.
 
-**23. How does the whole system run?**
+**"Does it lean one way?"**
+Yes. Where the truth is 0 to 3 hours, it predicts too high much more often
+than too low. So shaded areas come out too sunny. From 4 to 8 hours, errors go
+both ways about equally. 9 hours is the easiest, 82% right, because that's no
+shadow at all and a third of all pixels.
 
-Short answer: when the geometry changes, Grasshopper paints the meshes by height,
-captures a 512×512 screenshot of the Top view and sends it to a FastAPI backend
-(`POST /predict`); a second script sends the mesh itself to `/sync_model` so the
-browser can show it in 3D. The browser computes the sun
-vectors for the chosen place and date and sends them over WebSocket. The backend
-runs the model, converts the colours to the display palette, computes
-statistics, and pushes the image and the numbers to the Three.js page, which
-maps the result onto the 3D model.
+**"Why would shade come out too sunny?"**
+Imbalance. A third of pixels are 9 hours, only 4% are 0 hours, so the model
+leans sunny. A weighted loss, or the per-hour shadow masks, would help.
+
+**"Is the training-test gap overfitting?"**
+Partly. 11 points in exact accuracy, under 5 within one hour. But the test set
+is also distributed differently, which muddies the comparison.
+
+**"What does the symmetry test add?"**
+It checks something accuracy can't: whether the model behaves like the physics
+on inputs that should be just as easy. The order problem is a design flaw, not
+noise.
+
+---
+
+### J. The running tool
+
+**23. How does the whole system work?**
+
+**Say:**
+When the design changes in Rhino, Grasshopper paints the buildings by height,
+takes a screenshot from the top, and sends it to a Python backend. A second
+script sends the 3D mesh so the browser can show it. In the browser you pick a
+place and a date; it works out the sun directions and sends them over a
+WebSocket. The backend runs the model, converts the colours to the display
+palette, works out some statistics, and pushes the image and the numbers back
+to the browser, which drapes the result over the 3D model.
 
 ```python
 # inference.py, core of predict()
@@ -1250,9 +1403,11 @@ output_bgr_remapped = self._remap_colors(output_bgr, valid_mask)          # lege
 stats = self._calculate_stats_discrete(output_bgr_remapped, valid_mask)   # avg, %<2h, %>6h
 ```
 
-Follow-ups:
-- *How does the mesh get to the browser?* As JSON lists of vertex coordinates
-  and triangle indices; quads are split into two triangles:
+**Follow-ups:**
+
+**"How does the mesh get to the browser?"**
+As JSON: a list of vertex coordinates and a list of triangles. Quads get split
+into two triangles.
 
 ```python
 for f in rhino_mesh.Faces:
@@ -1265,135 +1420,162 @@ payload = {"vertices": verts, "faces": faces}
 client.UploadString(url, "POST", json.dumps(payload))   # url = .../sync_model
 ```
 
-  Plain JSON is fine for a design-sized model; a large city mesh would be
-  better sent in a binary format (for example glTF) and only when it changes.
-- *Why is the model loaded once at startup?* Loading 60 M parameters takes
-  seconds; per request it would destroy the latency.
-- *Why WebSocket and not polling?* Results are pushed to every open dashboard as
-  soon as they exist, in both directions (sun changes from the browser, geometry
-  from Grasshopper), without repeated requests.
-- *What happens if two updates arrive while the model is running?* They are
-  processed in order and each one triggers inference; there is no
-  "drop stale requests" logic. For real-time editing, keeping only the latest
-  request would be better.
-- *Why the 1-pixel erosion of the mask?* Pixels at the site border mix the
-  background and the site in the raster, so their predicted colour is
-  unreliable; eroding by one pixel removes them from the statistics.
-- *Why the Gaussian blur and the saturation boost?* The blur reduces
-  single-pixel noise in the counts; the 1.4× saturation makes the display
-  easier to read. But both happen before the dashboard statistics are computed,
-  so those statistics can differ slightly from the evaluation script, which
-  uses neither. Cleaner: compute the statistics from the class indices before
-  any display processing.
-- *How do you stop users trusting a wrong prediction?* Currently nothing: on an
-  unfamiliar form the model still outputs a plausible map. Options: an
-  out-of-distribution check on the input (for example distance of the height
-  map's features from the training set), Monte Carlo dropout or an ensemble for
-  per-pixel uncertainty, and a button to run the real simulation on demand.
+That's fine for a design model. For a whole city I'd send a binary format like
+glTF, and only when it changes.
 
-### K. Limitations, research directions, reflection
+**"Why load the model once at startup?"**
+Loading 60 million parameters takes seconds. Doing it on every request would
+kill the speed.
 
-**24. What is the biggest limitation?**
+**"Why WebSocket and not polling?"**
+Results get pushed to every open browser as soon as they're ready, in both
+directions, without asking again and again.
 
-Short answer: generalisation. All training and test scenes come from my own
-generator, so I can't claim the model works on real cities, and it can't say
-when it is unsure. The symmetry probe shows it also learned shortcuts that the
-physics doesn't allow.
+**"What if two updates arrive while the model is busy?"**
+They're handled in order, and each one runs the model. There's no "skip old
+requests". For live editing, keeping only the newest would be better.
 
-Follow-ups:
-- *Ranked list?* (1) No test on real city forms. (2) No uncertainty. (3) Order
-  dependence on the sun vectors. (4) 2.5D input, no context outside the site,
-  no scale information. (5) Output in colours instead of hours; GAN loss that
-  rewards appearance. (6) No validation set, no ablations, test set distributed
-  differently from training.
-- *Which one would you fix first, and how?* The evaluation on real cities,
-  because it decides whether everything else is worth doing: take a few hundred
-  real blocks with building heights, label them with Ladybug, and measure.
+**"Why shrink the mask by one pixel?"**
+Pixels right at the site border are a mix of site and background, so their
+predictions aren't reliable. Shrinking by one pixel leaves them out of the
+statistics.
+
+**"Why the blur and the saturation boost?"**
+The blur cuts single-pixel noise in the counts. The saturation boost makes the
+display easier to read. But both happen before the dashboard statistics, so
+those numbers can differ slightly from the evaluation script. It would be
+cleaner to compute statistics from the hour values first.
+
+**"How do you stop people trusting a wrong prediction?"**
+Right now, nothing. On an unfamiliar design it still gives a believable map.
+Options: check whether the input looks like the training data, give a
+per-pixel confidence with Monte Carlo dropout or several models, and add a
+button to run the real simulation.
+
+---
+
+### K. Looking back
+
+**24. What's the biggest limitation?**
+
+**Say:**
+Generalisation. All my scenes come from my own generator, so I can't claim it
+works on real cities. It also can't tell you when it's unsure. And the
+symmetry test shows it learned shortcuts that the physics doesn't allow.
+
+**Follow-ups:**
+
+**"Can you rank them?"**
+One, no test on real cities. Two, no confidence estimate. Three, it depends on
+the order of the sun vectors. Four, the input: 2.5D only, no neighbours, no
+scale. Five, it predicts colours instead of hours, with a GAN loss that rewards
+looks. Six, no validation set, no ablations.
+
+**"Which would you fix first?"**
+The real-city test, because it decides whether the rest is worth doing. Take a
+few hundred real blocks with building heights, run Ladybug, and measure.
+
+---
 
 **25. If you did it again, what would you change?**
 
-Short answer, in order:
-1. Predict hours (or 9 per-hour shadow masks) instead of colours; drop or
-   justify the GAN with an ablation.
-2. A set encoder for the sun vectors (or per-hour masks), and physically valid
-   augmentation (rotations and mirrors with the sun).
-3. A validation split with model selection; a learning curve; ablations of the
-   loss terms.
-4. Height map with fixed metric scale, plus a separate analysis mask, and
-   context buildings outside the site.
-5. A test set of real cities, and per-pixel uncertainty.
+**Say:**
+Five things, in order. First, predict hours, or nine hourly shadow masks,
+instead of colours, and only keep the GAN if an experiment shows it helps.
+Second, make the sun input order-free, and augment with rotations and mirrors
+that move the sun too. Third, a validation set, a learning curve, and tests of
+each loss choice. Fourth, a height map at a fixed scale, with a separate
+analysis mask and the neighbouring buildings included. Fifth, a test on real
+cities, and a confidence for each pixel.
+
+---
 
 **26. How does this connect to what you want to do in a PhD?**
 
-Adapt to the position, but the common thread: fast learned models of physical
-environments that are trustworthy. This project showed me three open problems
-from the inside: generalisation beyond the training generator, uncertainty
-(the model is deterministic and confident everywhere), and building physical
-structure into the model (the order and symmetry results). For each position
-card, pick the one that matches the group: probabilistic prediction for KTH,
-3D representations for MPI and DFKI, agents and generated environments for
-Chalmers, model choice and efficiency for Lund and TU Delft TPM.
+**Say (adjust to the position):**
+What I care about is fast learned models of physical environments that you can
+actually trust. This project showed me three open problems first-hand. Will it
+work beyond the data I generated? Can it say when it's unsure? It's confident
+everywhere right now. And how do you build the physics into the model, so it
+doesn't learn shortcuts like the order of the sun vectors?
+
+Pick the one that fits the group: probability and uncertainty for KTH, 3D
+representations for MPI and DFKI, agents and generated environments for
+Chalmers, choosing and sizing models for Lund and TU Delft TPM.
+
+---
 
 **27. What was the hardest part?**
 
-Use your own experience if you remember it. Answers that are true from the
-code and the data: getting training and inference to see exactly the same input (the
-masking and slot-order bugs, NEAREST resizing, the colour palette); and
-evaluating honestly once a pretty demo existed, which changed the headline
-number from an estimate of 80% to a measured 59% exact / 91% within one hour.
+**Say (use your own experience if you remember it):**
+Making sure training and the live tool see exactly the same input. Small
+mismatches, like the masking bug, the slot order, the resizing method or the
+colour palette, don't crash anything. They just quietly make the results
+worse. The other hard part was evaluating honestly once I had a demo that
+looked good. My early estimate was 80%. When I measured it properly, it was 59%
+exactly right and 91% within an hour, and I learned much more from that.
+
+---
 
 **28. What did you learn?**
 
-That a model that looks right is not a model that is right: the outputs looked
-convincing long before they were measured. Evaluation design (baselines,
-breakdowns, symmetry checks) told me more about the model than the training
-curves. And that physical structure (what the label depends on and what it
-doesn't) should guide the architecture.
+**Say:**
+That a model that looks right isn't necessarily right. The outputs looked
+convincing long before I measured them. Good evaluation, with baselines,
+breakdowns and the symmetry test, told me more than the training curves ever
+did. And the physics, what the answer depends on and what it doesn't, should
+shape the design of the model.
 
-**29. What is novel compared with pix2pix?**
+---
 
-Honest answer: the method is not new. What differs from plain pix2pix is the
-problem formulation and the conditioning: a physical condition (sun vectors
-over a day) injected through FiLM at 13 scales and into the discriminator, so
-one model covers any location and date instead of one model per sun position.
-The evaluation and the analysis of where it breaks are the part I would build
-research on.
+**29. What's new compared with pix2pix?**
 
-**30. Rapid-fire checks (one-sentence answers)**
+**Say:**
+Honestly, the method isn't new. What's different is the problem setup and the
+conditioning. I feed in a physical condition, the sun over a whole day,
+through FiLM at 13 levels and into the discriminator too. So one model covers
+any place and date, instead of one model per sun position. The evaluation, and
+finding where it breaks, is the part I'd build research on.
 
-- Input size? 256×256×3, normalised to [−1, 1].
-- Condition size? 36 = 9 × 3 + 9.
-- Embedding size? 128.
-- Generator parameters? 60.1 million.
-- Encoder depth? 8 down-sampling steps, 256 → 1.
-- FiLM blocks? 13 (enc2–7, dec1–7).
-- Normalisation? InstanceNorm, no affine; FiLM provides scale and shift.
-- Dropout? 0.5 in dec1–dec3, off at inference.
-- Discriminator output? 30×30 patch scores, 70×70 receptive field.
-- Loss? LSGAN + 50 × L1. D loss × 0.5.
-- Optimiser? Adam, lr 1e-4, β = (0.5, 0.999), batch 16, 200 epochs, no decay.
-- Released checkpoint? Epoch 195 (0-indexed), about 49,000 updates.
-- Data? 4,000 training, 200 test, from a Grasshopper generator, labels from
-  Ladybug.
-- Result? 59.3% exact, 90.8% within ±1 h, MAE 0.56 h; baseline 39.8%, 53.6%,
-  2.18 h.
+---
 
-**31. Questions you should be ready for that test understanding, not memory**
+**30. Quick-fire facts**
 
-Answer these out loud; the answers follow from the material above.
-- If you double every building's height, what should happen to the output, and
-  does your input encoding let the network know?
-- If you move the site from 40°N to 40°S on the same calendar date, what changes
-  in the sun vectors and in the label?
-- Why is the 1×1 bottleneck not enough on its own, and why are skip connections
-  not enough on their own?
-- What would happen if you trained with L1 only? With the GAN only?
-- How would you get a confidence value for each pixel without retraining?
-  (Monte Carlo dropout.) With retraining? (Ensembles; classification output;
+- Input: 256 × 256 × 3, scaled to −1..1.
+- Sun input: 36 numbers = 9 × 3 + 9.
+- Sun embedding: 128 numbers.
+- Generator: 60.1 million parameters.
+- Encoder: 8 steps down, 256 to 1.
+- FiLM: 13 layers (enc2–7, dec1–7).
+- Normalisation: instance norm, scale and shift come from FiLM.
+- Dropout: 0.5 in dec1–dec3, off when used.
+- Discriminator: 30 × 30 patch scores, each sees 70 × 70 pixels.
+- Loss: least-squares GAN + 50 × L1. Discriminator loss × 0.5.
+- Optimiser: Adam, 1e-4, betas (0.5, 0.999), batch 16, 200 epochs, no decay.
+- Released checkpoint: epoch 195, about 49,000 updates.
+- Data: 4,000 training, 200 test, Grasshopper + Ladybug.
+- Result: 90.8% within 1 hour, mean error 0.56 h, 59.3% exact. Baseline
+  53.6%, 2.18 h, 39.8%.
+
+---
+
+**31. Questions that test understanding, not memory**
+
+Answer these out loud. The answers follow from everything above.
+- If every building were twice as tall, what should happen to the output?
+  Would the model know? (Heights are in metres, fixed mapping, so yes, unless
+  they go past 250 m.)
+- Move the site from 40°N to 40°S on the same date. What changes in the sun
+  vectors and in the answer?
+- Why isn't the 1 × 1 bottleneck enough on its own? Why aren't the skip
+  connections enough on their own?
+- What would happen with L1 only? With the GAN only?
+- How could you get a confidence for each pixel without retraining? (Monte
+  Carlo dropout.) With retraining? (Several models; a classification output;
   a probabilistic model such as a diffusion model.)
-- How would you check that the model is not just memorising the generator's
-  building shapes? (Real-city test set; a held-out building category.)
-- A reviewer says "this is just pix2pix". Respond.
+- How would you check the model isn't just memorising your generator's
+  building shapes? (Real-city test; hold out a whole building category.)
+- A reviewer says "this is just pix2pix". What do you say?
 
 ---
 
